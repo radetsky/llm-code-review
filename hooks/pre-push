@@ -1,0 +1,69 @@
+#!/bin/bash
+# Pre-push hook for LLM code review
+# This hook runs before any push is made to remote repository
+
+set -e  # Exit on any error
+
+echo "🚀 Running comprehensive LLM code review before push..."
+
+# Check if review.py exists
+if [ ! -f "review.py" ]; then
+    echo "⚠️  review.py not found. Skipping code review."
+    exit 0
+fi
+
+# Save review results for analysis
+REVIEW_RESULT_FILE="/tmp/llm-review-$(date +%s).json"
+
+echo "📊 Analyzing changes since last push..."
+
+# Run review on all changes since last push
+python review.py --mode all --format json > "$REVIEW_RESULT_FILE" 2>/dev/null
+exit_code=$?
+
+# Save results for analysis
+echo "📋 Review results saved to: $REVIEW_RESULT_FILE"
+
+# Handle different exit codes
+case $exit_code in
+    0)
+        echo "✅ Comprehensive code review passed"
+        echo "🎉 Safe to push!"
+        exit 0
+        ;;
+    1)
+        echo ""
+        echo "❌ PUSH BLOCKED: Critical issues found!"
+        echo "   Please fix the critical issues before pushing."
+        echo ""
+        echo "📄 Full review report:"
+        cat "$REVIEW_RESULT_FILE" | python -m json.tool | grep -E "(critical_issues|warnings)" -A 10
+        exit 1
+        ;;
+    2)
+        echo ""
+        echo "⚠️  Warnings found, but push allowed."
+        echo "   Consider addressing the warnings for better code quality."
+        echo "📄 Review report available at: $REVIEW_RESULT_FILE"
+        exit 0
+        ;;
+    3)
+        echo ""
+        echo "⚠️  LLM model unavailable, but push allowed."
+        echo "   Code review was performed using static analysis only."
+        echo "📄 Review report available at: $REVIEW_RESULT_FILE"
+        exit 0
+        ;;
+    4)
+        echo ""
+        echo "❌ Configuration error. Please check your setup."
+        echo "   Run 'python review.py --test-connection' to diagnose."
+        exit 1
+        ;;
+    *)
+        echo ""
+        echo "❌ Unexpected error occurred during code review."
+        echo "   Exit code: $exit_code"
+        exit 1
+        ;;
+esac

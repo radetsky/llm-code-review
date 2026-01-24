@@ -1,0 +1,44 @@
+{
+  "llm": {
+    "model": "disabled-for-testing",
+    "base_url": "https://disabled-endpoint.com/api",
+    "api_key_env": "DISABLED_API_KEY",
+    "timeout": 1,
+    "max_retries": 1,
+    "fallback_model": null
+  },
+  "review": {
+    "critical_rules": [
+      "hardcoded_credentials",
+      "sql_injection", 
+      "xss_vulnerabilities",
+      "unsafe_functions",
+      "file_operations_without_validation"
+    ],
+    "warning_rules": [
+      "code_style_violations",
+      "potential_bugs",
+      "performance_issues",
+      "missing_error_handling",
+      "documentation_gaps"
+    ],
+    "file_extensions": [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h"],
+    "exclude_patterns": [
+      "node_modules/",
+      ".git/",
+      "__pycache__/",
+      "*.min.js",
+      "*.test.js",
+      "*.spec.js"
+    ]
+  },
+  "output": {
+    "format": "text",
+    "show_context": true,
+    "max_context_lines": 3
+  },
+  "fallback": {
+    "enable_static_analysis": true,
+    "allow_commit_on_unavailable": true
+  }
+}

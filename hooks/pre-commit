@@ -1,0 +1,55 @@
+#!/bin/bash
+# Pre-commit hook for LLM code review
+# This hook runs before any commit is made
+
+set -e  # Exit on any error
+
+echo "🔍 Running LLM code review..."
+
+# Check if review.py exists
+if [ ! -f "review.py" ]; then
+    echo "⚠️  review.py not found. Skipping code review."
+    exit 0
+fi
+
+# Run review on staged changes
+python review.py --mode staged --format text 2>/dev/null
+exit_code=$?
+
+# Handle different exit codes
+case $exit_code in
+    0)
+        echo "✅ Code review passed"
+        exit 0
+        ;;
+    1)
+        echo ""
+        echo "❌ COMMIT BLOCKED: Critical issues found!"
+        echo "   Please fix the critical issues before committing."
+        exit 1
+        ;;
+    2)
+        echo ""
+        echo "⚠️  Warnings found, but commit allowed."
+        echo "   Consider addressing the warnings for better code quality."
+        exit 0
+        ;;
+    3)
+        echo ""
+        echo "⚠️  LLM model unavailable, but commit allowed."
+        echo "   Code review was performed using static analysis only."
+        exit 0
+        ;;
+    4)
+        echo ""
+        echo "❌ Configuration error. Please check your setup."
+        echo "   Run 'python review.py --test-connection' to diagnose."
+        exit 1
+        ;;
+    *)
+        echo ""
+        echo "❌ Unexpected error occurred during code review."
+        echo "   Exit code: $exit_code"
+        exit 1
+        ;;
+esac
