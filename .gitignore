@@ -1,0 +1,27 @@
+# Environment and secrets
+.env
+.env.*
+*.fish
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-venv/
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and reports
+logs/
+*.log
+review_result.json
+
+# OS
+.DS_Store
+Thumbs.db

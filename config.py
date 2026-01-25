@@ -15,7 +15,7 @@ class ReviewConfig:
         "llm": {
             "model": "gpt-oss:20b",
             "base_url": "https://llm.dev.cossacklabs.com/api",
-            "api_key_env": "SECRET_LLM_API_KEY",
+            "api_key_env": "LLM_API_KEY",
             "timeout": 30,
             "max_retries": 3
         },
@@ -99,9 +99,26 @@ class ReviewConfig:
             return default
     
     def get_api_key(self) -> Optional[str]:
-        """Get API key from environment."""
+        """Get API key from environment. LLM_API_KEY takes precedence."""
+        env_key = os.getenv("LLM_API_KEY")
+        if env_key:
+            return env_key
         api_key_env = self.get("llm.api_key_env")
         return os.getenv(api_key_env)
+
+    def get_base_url(self) -> str:
+        """Get LLM base URL. Environment variable takes precedence over config."""
+        env_url = os.getenv("LLM_BASE_URL")
+        if env_url:
+            return env_url
+        return self.get("llm.base_url")
+
+    def get_model(self) -> str:
+        """Get LLM model name. Environment variable takes precedence over config."""
+        env_model = os.getenv("LLM_MODEL")
+        if env_model:
+            return env_model
+        return self.get("llm.model")
     
     def is_file_supported(self, file_path: str) -> bool:
         """Check if file extension is supported for review."""

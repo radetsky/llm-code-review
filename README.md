@@ -1,6 +1,6 @@
 # LLM Code Review System
 
-Automated code review system using LLM with multiple integration approaches for corporate environments.
+Automated code review system using LLM with multiple integration approaches. Supports any OpenAI-compatible API endpoint.
 
 ## 🚀 Features
 
@@ -26,11 +26,14 @@ pip install -r requirements.txt
 ### 2. Configuration
 ```bash
 # Copy and edit configuration
-cp review_config.json.example review_config.json
+cp review_config_example.json review_config.json
 
-# Set your API key
-export OPENAI_API_KEY="your-api-key-here"
-export LLM_BASE_URL="https://your-llm-endpoint.com/api"
+# Set your API key (required)
+export LLM_API_KEY="your-api-key-here"
+
+# Optional: Override base URL and model from config
+export LLM_BASE_URL="https://api.opencode.ai/v1"
+export LLM_MODEL="anthropic/claude-sonnet-4"
 ```
 
 ### 3. Git Hooks Installation
@@ -86,15 +89,18 @@ git push origin main
 ## ⚙️ Configuration
 
 ### Review Configuration (review_config.json)
+
+Note: Environment variables (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`) override config file settings.
+
 ```json
 {
   "llm": {
-    "model": "gpt-4",
-    "base_url": "https://api.openai.com/v1",
-    "api_key_env": "OPENAI_API_KEY",
+    "model": "anthropic/claude-sonnet-4",
+    "base_url": "https://api.opencode.ai/v1",
+    "api_key_env": "LLM_API_KEY",
     "timeout": 30,
     "max_retries": 3,
-    "fallback_model": "gpt-3.5-turbo"
+    "fallback_model": "anthropic/claude-haiku"
   },
   "review": {
     "critical_rules": [
@@ -134,12 +140,18 @@ git push origin main
 ```
 
 ### Environment Variables
+
+Environment variables take precedence over config file settings:
+
 ```bash
 # Required: API key for LLM
-OPENAI_API_KEY="your-api-key"
+LLM_API_KEY="your-api-key"
 
-# Optional: Custom API endpoint
-LLM_BASE_URL="https://your-llm-endpoint.com/api"
+# Optional: Override base URL from config
+LLM_BASE_URL="https://api.opencode.ai/v1"
+
+# Optional: Override model from config
+LLM_MODEL="anthropic/claude-sonnet-4"
 
 # Optional: Custom configuration file
 REVIEW_CONFIG_FILE="custom-config.json"
@@ -174,26 +186,25 @@ python monitor.py report --days 30
 
 ## 🔄 Integration Examples
 
-### Corporate LLM Setup
-```json
-{
-  "llm": {
-    "model": "gpt-oss:20b",
-    "base_url": "https://llm.corp.company.com/api",
-    "api_key_env": "CORP_LLM_API_KEY"
-  }
-}
+### OpenCode.ai Setup (Claude)
+```bash
+export LLM_API_KEY="your-opencode-key"
+export LLM_BASE_URL="https://api.opencode.ai/v1"
+export LLM_MODEL="anthropic/claude-sonnet-4"
 ```
 
-### Local Model Setup
-```json
-{
-  "llm": {
-    "model": "llama-3.1-8b",
-    "base_url": "http://localhost:11434/v1",
-    "api_key_env": "OLLAMA_API_KEY"
-  }
-}
+### OpenAI Setup
+```bash
+export LLM_API_KEY="your-openai-key"
+export LLM_BASE_URL="https://api.openai.com/v1"
+export LLM_MODEL="gpt-4"
+```
+
+### Local Ollama Setup
+```bash
+export LLM_API_KEY="ollama"
+export LLM_BASE_URL="http://localhost:11434/v1"
+export LLM_MODEL="llama3.2"
 ```
 
 ## 🛡️ Security Features
@@ -222,8 +233,9 @@ python monitor.py report --days 30
 
 ### Repository Secrets
 Set these in GitHub repository settings:
-- `LLM_API_KEY`: Your LLM API key
-- `LLM_BASE_URL`: Your LLM endpoint (optional)
+- `LLM_API_KEY`: Your LLM API key (required)
+- `LLM_BASE_URL`: Your LLM endpoint (optional, overrides config)
+- `LLM_MODEL`: Model name (optional, overrides config)
 
 ### Workflow Features
 - **Pull Request Reviews**: Automatic analysis and commenting
@@ -248,6 +260,7 @@ cl-llm/
 ├── .github/workflows/       # GitHub Actions
 │   └── llm-review.yml
 ├── review_config.json       # Configuration
+├── review_config_example.json # Example config (OpenAI)
 ├── requirements.txt         # Dependencies
 ├── logs/                   # Review logs
 └── README.md              # This file

@@ -1,1 +1,0 @@
-set -gx SECRET_LLM_API_KEY "sk-a2a79ee5c1f346d1964b5807be09785f" 

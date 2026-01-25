@@ -47,4 +47,4 @@ def network_request():
     # Hardcoded URL - should be warning
     import requests
     response = requests.get("https://api.example.com/data")
-    return response.json()
+    return response.json()# Test change

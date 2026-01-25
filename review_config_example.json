@@ -1,11 +1,11 @@
 {
   "llm": {
-    "model": "anthropic/claude-sonnet-4",
-    "base_url": "https://api.opencode.ai/v1",
-    "api_key_env": "LLM_API_KEY",
+    "model": "gpt-4",
+    "base_url": "https://api.openai.com/v1",
+    "api_key_env": "OPENAI_API_KEY",
     "timeout": 30,
     "max_retries": 3,
-    "fallback_model": "anthropic/claude-haiku"
+    "fallback_model": "gpt-3.5-turbo"
   },
   "review": {
     "critical_rules": [

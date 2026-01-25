@@ -118,7 +118,7 @@ class MonitoringUtils:
             reviewer = LLMReviewer(self.config)
             if reviewer.test_connection():
                 result["details"]["connection"] = "ok"
-                result["details"]["model"] = self.config.get("llm.model")
+                result["details"]["model"] = self.config.get_model()
             else:
                 result["details"]["connection"] = "failed"
                 result["status"] = "error"

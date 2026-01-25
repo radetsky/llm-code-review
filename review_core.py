@@ -81,9 +81,9 @@ Focus on security vulnerabilities first, then code quality."""
         if self.client is None:
             api_key = self.config.get_api_key()
             if not api_key:
-                raise ValueError(f"API key not found. Set {self.config.get('llm.api_key_env')} environment variable.")
+                raise ValueError("API key not found. Set LLM_API_KEY environment variable.")
             
-            base_url = self.config.get("llm.base_url")
+            base_url = self.config.get_base_url()
             timeout = self.config.get("llm.timeout", 30)
             
             self.client = OpenAI(
@@ -139,7 +139,7 @@ Focus on security vulnerabilities first, then code quality."""
     def _call_llm(self, diff_content: str) -> ReviewResult:
         """Make LLM API call."""
         client = self._get_client()
-        model = self.config.get("llm.model")
+        model = self.config.get_model()
         
         prompt = self.REVIEW_PROMPT.format(diff_content=diff_content)
         
@@ -270,7 +270,7 @@ Focus on security vulnerabilities first, then code quality."""
         """Test connection to LLM."""
         try:
             client = self._get_client()
-            model = self.config.get("llm.model")
+            model = self.config.get_model()
             
             # Simple test message
             response = client.chat.completions.create(

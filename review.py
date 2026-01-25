@@ -130,7 +130,7 @@ Examples:
         """Validate configuration."""
         # Check API key
         if not self.config.get_api_key():
-            print(f"Error: API key not found. Set {self.config.get('llm.api_key_env')} environment variable.", file=sys.stderr)
+            print("Error: API key not found. Set LLM_API_KEY environment variable.", file=sys.stderr)
             return False
         
         # Check if in git repository

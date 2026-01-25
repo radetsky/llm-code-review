@@ -2,13 +2,12 @@
 
 ## Project Overview
 
-A Python project for interacting with CossackLabs' internal LLM API using the OpenAI-compatible client.
+LLM-powered code review system with multiple integration modes:
+- **Terminal CLI** (`review.py`) - Direct command-line usage
+- **Git hooks** - Pre-commit/pre-push automation
+- **GitHub Actions** - CI/CD integration with PR comments
 
-## Architecture
-
-- **Single-script project**: Main logic lives in `hello_llm.py`
-- **OpenAI-compatible API**: Uses the `openai` Python package against a custom endpoint (`https://llm.dev.cossacklabs.com/api`)
-- **Model**: `gpt-oss:20b` - the internal LLM model identifier
+Uses OpenAI-compatible API against configurable endpoints.
 
 ## Environment Setup
 
@@ -16,40 +15,51 @@ A Python project for interacting with CossackLabs' internal LLM API using the Op
 # Activate Python virtual environment
 source .python-venv/bin/activate.fish
 
-# Load API key (fish shell)
-source .env.fish
-```
+# Set API key
+export LLM_API_KEY="your-api-key"
 
-The API key is stored in `SECRET_LLM_API_KEY` environment variable.
+# Optional: Override base URL and model
+export LLM_BASE_URL="https://api.opencode.ai/v1"
+export LLM_MODEL="anthropic/claude-sonnet-4"
+```
 
 ## Code Patterns
 
 ### API Client Configuration
 
-Always configure the OpenAI client with the custom base URL:
+Configuration is loaded from `review_config.json`, but environment variables take precedence:
+
+```python
+from config import ReviewConfig
+
+config = ReviewConfig()
+
+# These methods check env vars first, then fall back to config file
+api_key = config.get_api_key()    # LLM_API_KEY env var
+base_url = config.get_base_url()  # LLM_BASE_URL env var
+model = config.get_model()        # LLM_MODEL env var
+```
+
+### Making LLM Requests
+
+The system uses OpenAI-compatible client:
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://llm.dev.cossacklabs.com/api",
-    api_key=os.environ.get("SECRET_LLM_API_KEY")  # Use env var, not hardcoded
+    base_url=config.get_base_url(),
+    api_key=config.get_api_key()
 )
-```
 
-### Making LLM Requests
-
-Use the chat completions API with the `gpt-oss:20b` model:
-
-```python
 response = client.chat.completions.create(
-    model="gpt-oss:20b",
+    model=config.get_model(),
     messages=[{"role": "user", "content": "Your prompt"}]
 )
 ```
 
 ## Important Notes
 
-- **Never commit API keys**: Use environment variables from `.env.fish`
-- **Language**: The project uses Ukrainian language in prompts/responses
+- **Never commit API keys**: Use environment variables
+- **All code comments must be in English**
 - **Shell**: Project uses fish shell for environment configuration
