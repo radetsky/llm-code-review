@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./install.sh              # Install locally only
-#   ./install.sh --global     # Install + add global 'llm-review' command
+#   ./install.sh --global     # Install + add global 'llm-code-review' command
 #   ./install.sh --hook       # Install + set up git hook in current repo
 #
 
@@ -12,7 +12,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
-GLOBAL_CMD="/usr/local/bin/llm-review"
+GLOBAL_CMD="/usr/local/bin/llm-code-review"
 
 # Colors
 RED='\033[0;31m'
@@ -99,12 +99,12 @@ python \"$SCRIPT_DIR/review.py\" \"\$@\"
     if [ -w "/usr/local/bin" ]; then
         echo "$WRAPPER_CONTENT" > "$GLOBAL_CMD"
         chmod +x "$GLOBAL_CMD"
-        print_success "Installed global command: llm-review"
+        print_success "Installed global command: llm-code-review"
     else
         print_warning "Need sudo to install to /usr/local/bin"
         echo "$WRAPPER_CONTENT" | sudo tee "$GLOBAL_CMD" > /dev/null
         sudo chmod +x "$GLOBAL_CMD"
-        print_success "Installed global command: llm-review"
+        print_success "Installed global command: llm-code-review"
     fi
 }
 
@@ -168,9 +168,9 @@ print_usage() {
     if [ "$INSTALL_GLOBAL" = true ]; then
         echo "Usage (global command):"
         echo ""
-        echo "  llm-review --mode staged     # Review staged changes"
-        echo "  llm-review --mode all        # Review all changes"
-        echo "  llm-review --test-connection # Test API connection"
+        echo "  llm-code-review --mode staged     # Review staged changes"
+        echo "  llm-code-review --mode all        # Review all changes"
+        echo "  llm-code-review --test-connection # Test API connection"
         echo ""
     else
         echo "Usage (from this directory):"
@@ -213,7 +213,7 @@ for arg in "$@"; do
             echo ""
             echo "Usage:"
             echo "  ./install.sh              Install locally"
-            echo "  ./install.sh --global     Install + global 'llm-review' command"
+            echo "  ./install.sh --global     Install + global 'llm-code-review' command"
             echo "  ./install.sh --hook       Install + git pre-commit hook"
             echo "  ./install.sh --global --hook   All of the above"
             echo ""
