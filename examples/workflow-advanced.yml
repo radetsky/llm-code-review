@@ -1,0 +1,91 @@
+# Advanced LLM Code Review workflow with all options
+# Copy this file to your repository: .github/workflows/llm-code-review.yml
+
+name: LLM Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, develop]
+
+jobs:
+  code-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run LLM Code Review
+        id: review
+        uses: radetsky/llm-code-review@v1
+        with:
+          api_key: ${{ secrets.LLM_API_KEY }}
+          base_url: ${{ secrets.LLM_BASE_URL }}
+          model: ${{ secrets.LLM_MODEL }}
+
+          # Fail on warnings too (default: false)
+          strict: 'false'
+
+          # Post review as PR comment (default: true)
+          post_comment: 'true'
+
+          # Fail action if critical issues found (default: true)
+          fail_on_critical: 'true'
+
+      - name: Review Summary
+        if: always()
+        run: |
+          echo "Review Status: ${{ steps.review.outputs.status }}"
+          echo "Critical Issues: ${{ steps.review.outputs.critical_count }}"
+          echo "Warnings: ${{ steps.review.outputs.warning_count }}"
+          echo "Suggestions: ${{ steps.review.outputs.suggestion_count }}"
+
+      - name: Upload Review Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-review-results
+          path: ${{ steps.review.outputs.result_file }}
+          retention-days: 7
+
+  # Optional: Run only on specific paths
+  code-review-filtered:
+    name: AI Code Review (Filtered)
+    runs-on: ubuntu-latest
+    if: false  # Enable by changing to: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for code changes
+        id: changes
+        run: |
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '\.(py|js|ts|go|rs)$' || true)
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No code files changed, skipping review"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
+          fi
+
+      - name: Run LLM Code Review
+        if: steps.changes.outputs.skip != 'true'
+        uses: radetsky/llm-code-review@v1
+        with:
+          api_key: ${{ secrets.LLM_API_KEY }}

@@ -1,0 +1,289 @@
+name: 'LLM Code Review'
+description: 'AI-powered code review using LLM for pull requests and commits'
+author: 'llm-code-review'
+
+branding:
+  icon: 'code'
+  color: 'blue'
+
+inputs:
+  api_key:
+    description: 'API key for LLM service'
+    required: true
+  base_url:
+    description: 'LLM API base URL (optional, uses config default if not set)'
+    required: false
+  model:
+    description: 'LLM model name (optional, uses config default if not set)'
+    required: false
+  mode:
+    description: 'Review mode: staged, unstaged, all (default: use base/head for PRs)'
+    required: false
+  base:
+    description: 'Base commit/branch for diff (auto-detected for PRs)'
+    required: false
+  head:
+    description: 'Head commit/branch for diff (auto-detected for PRs)'
+    required: false
+  strict:
+    description: 'Fail on warnings too (default: false)'
+    required: false
+    default: 'false'
+  post_comment:
+    description: 'Post review results as PR comment (default: true)'
+    required: false
+    default: 'true'
+  fail_on_critical:
+    description: 'Fail the action if critical issues found (default: true)'
+    required: false
+    default: 'true'
+
+outputs:
+  status:
+    description: 'Review status: success, warnings, critical, error, model_unavailable'
+    value: ${{ steps.review.outputs.status }}
+  critical_count:
+    description: 'Number of critical issues found'
+    value: ${{ steps.review.outputs.critical_count }}
+  warning_count:
+    description: 'Number of warnings found'
+    value: ${{ steps.review.outputs.warning_count }}
+  suggestion_count:
+    description: 'Number of suggestions'
+    value: ${{ steps.review.outputs.suggestion_count }}
+  result_file:
+    description: 'Path to JSON result file'
+    value: ${{ steps.review.outputs.result_file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r ${{ github.action_path }}/requirements.txt
+
+    - name: Determine diff range
+      id: diff_range
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.base }}" ] && [ -n "${{ inputs.head }}" ]; then
+          echo "base=${{ inputs.base }}" >> $GITHUB_OUTPUT
+          echo "head=${{ inputs.head }}" >> $GITHUB_OUTPUT
+          echo "Using provided base/head"
+        elif [ "${{ github.event_name }}" == "pull_request" ]; then
+          echo "base=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
+          echo "head=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
+          echo "Using PR base/head"
+        elif [ "${{ github.event_name }}" == "push" ]; then
+          echo "base=${{ github.event.before }}" >> $GITHUB_OUTPUT
+          echo "head=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "Using push before/after"
+        else
+          echo "base=HEAD~1" >> $GITHUB_OUTPUT
+          echo "head=HEAD" >> $GITHUB_OUTPUT
+          echo "Using HEAD~1..HEAD"
+        fi
+
+    - name: Run LLM Code Review
+      id: review
+      shell: bash
+      env:
+        LLM_API_KEY: ${{ inputs.api_key }}
+        LLM_BASE_URL: ${{ inputs.base_url }}
+        LLM_MODEL: ${{ inputs.model }}
+      run: |
+        RESULT_FILE="${{ runner.temp }}/llm-review-result.json"
+
+        ARGS="--format json"
+
+        if [ -n "${{ inputs.mode }}" ]; then
+          ARGS="$ARGS --mode ${{ inputs.mode }}"
+        else
+          ARGS="$ARGS --base ${{ steps.diff_range.outputs.base }} --head ${{ steps.diff_range.outputs.head }}"
+        fi
+
+        if [ "${{ inputs.strict }}" == "true" ]; then
+          ARGS="$ARGS --strict"
+        fi
+
+        echo "Running: python ${{ github.action_path }}/review.py $ARGS"
+
+        set +e
+        python "${{ github.action_path }}/review.py" $ARGS > "$RESULT_FILE" 2>&1
+        EXIT_CODE=$?
+        set -e
+
+        echo "Exit code: $EXIT_CODE"
+        echo "result_file=$RESULT_FILE" >> $GITHUB_OUTPUT
+
+        if [ -f "$RESULT_FILE" ] && python -c "import json; json.load(open('$RESULT_FILE'))" 2>/dev/null; then
+          CRITICAL_COUNT=$(python -c "import json; data=json.load(open('$RESULT_FILE')); print(len(data.get('critical_issues', [])))")
+          WARNING_COUNT=$(python -c "import json; data=json.load(open('$RESULT_FILE')); print(len(data.get('warnings', [])))")
+          SUGGESTION_COUNT=$(python -c "import json; data=json.load(open('$RESULT_FILE')); print(len(data.get('suggestions', [])))")
+          STATUS=$(python -c "import json; data=json.load(open('$RESULT_FILE')); print(data.get('status', 'unknown'))")
+        else
+          CRITICAL_COUNT=0
+          WARNING_COUNT=0
+          SUGGESTION_COUNT=0
+          STATUS="error"
+          echo "Failed to parse review results"
+          cat "$RESULT_FILE" || true
+        fi
+
+        echo "critical_count=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
+        echo "warning_count=$WARNING_COUNT" >> $GITHUB_OUTPUT
+        echo "suggestion_count=$SUGGESTION_COUNT" >> $GITHUB_OUTPUT
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+        echo "Review Summary:"
+        echo "  Status: $STATUS"
+        echo "  Critical: $CRITICAL_COUNT"
+        echo "  Warnings: $WARNING_COUNT"
+        echo "  Suggestions: $SUGGESTION_COUNT"
+
+    - name: Post PR Comment
+      if: inputs.post_comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+
+          let reviewData = {};
+          let commentText = '';
+
+          try {
+            const resultFile = '${{ steps.review.outputs.result_file }}';
+            const reviewResult = fs.readFileSync(resultFile, 'utf8');
+            reviewData = JSON.parse(reviewResult);
+
+            const criticalCount = ${{ steps.review.outputs.critical_count }};
+            const warningCount = ${{ steps.review.outputs.warning_count }};
+            const suggestionCount = ${{ steps.review.outputs.suggestion_count }};
+            const status = '${{ steps.review.outputs.status }}';
+
+            let statusIcon = '';
+            let statusText = '';
+            if (status === 'success') {
+              statusIcon = ':white_check_mark:';
+              statusText = 'Passed';
+            } else if (status === 'model_unavailable') {
+              statusIcon = ':warning:';
+              statusText = 'Model Unavailable (static analysis used)';
+            } else if (criticalCount > 0) {
+              statusIcon = ':x:';
+              statusText = 'Critical Issues Found';
+            } else if (warningCount > 0) {
+              statusIcon = ':warning:';
+              statusText = 'Warnings Found';
+            } else {
+              statusIcon = ':grey_question:';
+              statusText = status;
+            }
+
+            commentText = `## ${statusIcon} LLM Code Review
+
+**Status:** ${statusText}
+
+| Category | Count |
+|----------|-------|
+| Critical Issues | ${criticalCount} |
+| Warnings | ${warningCount} |
+| Suggestions | ${suggestionCount} |
+`;
+
+            if (reviewData.critical_issues && reviewData.critical_issues.length > 0) {
+              commentText += '\n### Critical Issues\n';
+              reviewData.critical_issues.forEach(issue => {
+                commentText += `- :rotating_light: ${issue}\n`;
+              });
+            }
+
+            if (reviewData.warnings && reviewData.warnings.length > 0) {
+              commentText += '\n### Warnings\n';
+              reviewData.warnings.forEach(warning => {
+                commentText += `- :warning: ${warning}\n`;
+              });
+            }
+
+            if (reviewData.suggestions && reviewData.suggestions.length > 0) {
+              commentText += '\n### Suggestions\n';
+              reviewData.suggestions.forEach(suggestion => {
+                commentText += `- :bulb: ${suggestion}\n`;
+              });
+            }
+
+            if (reviewData.fallback_used) {
+              commentText += '\n> :information_source: *Static analysis was used due to LLM unavailability*\n';
+            }
+
+            commentText += '\n---\n<sub>Generated by [LLM Code Review](https://github.com/radetsky/llm-code-review)</sub>';
+
+          } catch (error) {
+            console.error('Error reading review results:', error);
+            commentText = '## :x: LLM Code Review\n\nError occurred during code review analysis.\n\n```\n' + error.message + '\n```';
+          }
+
+          try {
+            const comments = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes('LLM Code Review')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                comment_id: botComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentText
+              });
+              console.log('Updated existing comment');
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentText
+              });
+              console.log('Created new comment');
+            }
+          } catch (error) {
+            console.error('Error managing PR comment:', error);
+          }
+
+    - name: Check for failures
+      if: inputs.fail_on_critical == 'true'
+      shell: bash
+      run: |
+        CRITICAL_COUNT=${{ steps.review.outputs.critical_count }}
+        STATUS=${{ steps.review.outputs.status }}
+        STRICT="${{ inputs.strict }}"
+        WARNING_COUNT=${{ steps.review.outputs.warning_count }}
+
+        if [ "$CRITICAL_COUNT" -gt 0 ]; then
+          echo "Critical issues found: $CRITICAL_COUNT"
+          exit 1
+        fi
+
+        if [ "$STRICT" == "true" ] && [ "$WARNING_COUNT" -gt 0 ]; then
+          echo "Warnings found (strict mode): $WARNING_COUNT"
+          exit 1
+        fi
+
+        if [ "$STATUS" == "error" ]; then
+          echo "Review failed with error"
+          exit 1
+        fi
+
+        echo "Review passed"

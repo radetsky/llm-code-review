@@ -15,8 +15,8 @@ Automated code review powered by LLM. Works with any OpenAI-compatible API (Open
 ### 1. Install
 
 ```bash
-git clone https://github.com/pashokred/cl-llm.git
-cd cl-llm
+git clone https://github.com/radetsky/llm-code-review.git
+cd llm-code-review
 ./install.sh
 ```
 
@@ -31,12 +31,12 @@ export LLM_API_KEY="your-api-key"
 
 ```bash
 cd /path/to/your/project
-/path/to/cl-llm/.venv/bin/python /path/to/cl-llm/review.py --mode staged
+/path/to/llm-code-review/.venv/bin/python /path/to/llm-code-review/review.py --mode staged
 ```
 
 ## Global Installation (Recommended)
 
-Install the `llm-review` command system-wide:
+Install the `llm-code-review` command system-wide:
 
 ```bash
 ./install.sh --global
@@ -46,9 +46,9 @@ Now use from any directory:
 
 ```bash
 cd ~/my-project
-llm-review --mode staged        # Review staged changes
-llm-review --mode all           # Review all uncommitted changes
-llm-review --test-connection    # Test API connection
+llm-code-review --mode staged        # Review staged changes
+llm-code-review --mode all           # Review all uncommitted changes
+llm-code-review --test-connection    # Test API connection
 ```
 
 ## Git Hook Integration
@@ -57,7 +57,7 @@ Automatically review code before every commit:
 
 ```bash
 cd ~/my-project
-/path/to/cl-llm/install.sh --hook
+/path/to/llm-code-review/install.sh --hook
 ```
 
 Or install both global command and hook:
@@ -92,14 +92,14 @@ export LLM_MODEL="llama3.2"
 ## CLI Reference
 
 ```bash
-llm-review --mode staged          # Review staged changes (default)
-llm-review --mode unstaged        # Review unstaged changes
-llm-review --mode all             # Review all uncommitted changes
-llm-review --base main --head dev # Compare branches
-llm-review --format json          # JSON output for CI/CD
-llm-review --strict               # Block on warnings too
-llm-review --verbose              # Detailed output
-llm-review --test-connection      # Test API connectivity
+llm-code-review --mode staged          # Review staged changes (default)
+llm-code-review --mode unstaged        # Review unstaged changes
+llm-code-review --mode all             # Review all uncommitted changes
+llm-code-review --base main --head dev # Compare branches
+llm-code-review --format json          # JSON output for CI/CD
+llm-code-review --strict               # Block on warnings too
+llm-code-review --verbose              # Detailed output
+llm-code-review --test-connection      # Test API connectivity
 ```
 
 ## Configuration
@@ -174,27 +174,86 @@ Add project-specific rules to the `prompt` section in `review_config.json`:
 
 ## GitHub Actions
 
-Add to your workflow:
+Use the LLM Code Review action in your workflows:
+
+### Basic Usage
 
 ```yaml
-- name: LLM Code Review
-  env:
-    LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-  run: |
-    pip install openai
-    python review.py --mode staged --format json
+# .github/workflows/code-review.yml
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: radetsky/llm-code-review@v1
+        with:
+          api_key: ${{ secrets.LLM_API_KEY }}
 ```
 
-Set `LLM_API_KEY` in repository secrets.
+### Advanced Usage
+
+```yaml
+      - uses: radetsky/llm-code-review@v1
+        id: review
+        with:
+          api_key: ${{ secrets.LLM_API_KEY }}
+          base_url: ${{ secrets.LLM_BASE_URL }}  # Optional
+          model: ${{ secrets.LLM_MODEL }}        # Optional
+          strict: 'false'                        # Fail on warnings too
+          post_comment: 'true'                   # Post PR comment
+          fail_on_critical: 'true'               # Fail if critical issues
+
+      - name: Check results
+        run: |
+          echo "Status: ${{ steps.review.outputs.status }}"
+          echo "Critical: ${{ steps.review.outputs.critical_count }}"
+          echo "Warnings: ${{ steps.review.outputs.warning_count }}"
+```
+
+### Action Inputs
+
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `api_key` | LLM API key | Yes | - |
+| `base_url` | API endpoint URL | No | config |
+| `model` | Model name | No | config |
+| `strict` | Fail on warnings | No | `false` |
+| `post_comment` | Post PR comment | No | `true` |
+| `fail_on_critical` | Fail on critical issues | No | `true` |
+
+### Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `status` | Review status: success, warnings, critical, error |
+| `critical_count` | Number of critical issues |
+| `warning_count` | Number of warnings |
+| `suggestion_count` | Number of suggestions |
+| `result_file` | Path to JSON result file |
+
+See `examples/` folder for more workflow examples.
 
 ## Troubleshooting
 
 ```bash
 # Test API connection
-llm-review --test-connection
+llm-code-review --test-connection
 
 # Verbose output
-llm-review --mode staged --verbose
+llm-code-review --mode staged --verbose
 
 # Health check
 python monitor.py health
@@ -203,7 +262,8 @@ python monitor.py health
 ## Project Structure
 
 ```
-cl-llm/
+llm-code-review/
+├── action.yml                    # GitHub Action definition
 ├── install.sh                    # Installation script
 ├── review.py                     # CLI entry point
 ├── review_core.py                # LLM integration & prompt building
@@ -211,7 +271,12 @@ cl-llm/
 ├── static_analyzer.py            # Fallback analysis
 ├── review_config.json            # Your configuration
 ├── review_config_example.json    # OpenAI example
-└── review_config_rust_example.json  # Rust project example
+├── review_config_rust_example.json  # Rust project example
+├── examples/
+│   ├── workflow-basic.yml        # Basic GitHub Actions workflow
+│   └── workflow-advanced.yml     # Advanced workflow with all options
+└── .github/workflows/
+    └── llm-review.yml            # This repo's CI workflow
 ```
 
 ## License
