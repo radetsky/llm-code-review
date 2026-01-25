@@ -1,334 +1,181 @@
 # LLM Code Review System
 
-Automated code review system using LLM with multiple integration approaches. Supports any OpenAI-compatible API endpoint.
+Automated code review powered by LLM. Works with any OpenAI-compatible API (OpenAI, Anthropic via OpenRouter, local Ollama, etc.).
 
-## 🚀 Features
+## Features
 
-- **Multiple Integration Modes**: Terminal CLI, Git Hooks, GitHub Actions
-- **Security-First**: Focus on critical vulnerabilities and safety issues
-- **Graceful Degradation**: Fallback to static analysis when LLM unavailable
-- **Configurable**: Flexible rules and model settings
-- **Corporate-Friendly**: Zero external data retention, local processing
+- **Security-focused** - Detects credentials, SQL injection, XSS, unsafe functions
+- **Multiple modes** - CLI, Git hooks, GitHub Actions
+- **Flexible** - Works with any OpenAI-compatible endpoint
+- **Graceful fallback** - Static analysis when LLM unavailable
 
-## 📋 Installation
+## Quick Start
 
-### 1. Dependencies
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Or using virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-pip install -r requirements.txt
-```
-
-### 2. Configuration
-```bash
-# Copy and edit configuration
-cp review_config_example.json review_config.json
-
-# Set your API key (required)
-export LLM_API_KEY="your-api-key-here"
-
-# Optional: Override base URL and model from config
-export LLM_BASE_URL="https://api.opencode.ai/v1"
-export LLM_MODEL="anthropic/claude-sonnet-4"
-```
-
-### 3. Git Hooks Installation
-```bash
-# Install automatic git hooks
-python install_hooks.py
-```
-
-## 🔧 Usage
-
-### Terminal Command
-```bash
-# Review staged changes (before commit)
-python review.py --mode staged
-
-# Review unstaged changes
-python review.py --mode unstaged
-
-# Review all changes from HEAD
-python review.py --mode all
-
-# Review between branches/commits
-python review.py --base main --head feature-branch
-
-# JSON output for CI/CD
-python review.py --mode staged --format json
-
-# Strict mode (block on warnings too)
-python review.py --mode staged --strict
-
-# Verbose output
-python review.py --mode staged --verbose
-
-# Test connection to LLM
-python review.py --test-connection
-```
-
-### Git Hooks (Automatic)
-```bash
-# Pre-commit hook runs automatically before commit
-git commit -m "Add new feature"
-
-# Pre-push hook runs automatically before push
-git push origin main
-```
-
-### GitHub Actions (CI/CD)
-- Automatic review on Pull Requests
-- Results as PR comments
-- Status checks: `LLM Review: Passed/Warning/Failed`
-- Artifacts with detailed JSON results
-
-## ⚙️ Configuration
-
-### Review Configuration (review_config.json)
-
-Note: Environment variables (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`) override config file settings.
-
-```json
-{
-  "llm": {
-    "model": "anthropic/claude-sonnet-4",
-    "base_url": "https://api.opencode.ai/v1",
-    "api_key_env": "LLM_API_KEY",
-    "timeout": 30,
-    "max_retries": 3,
-    "fallback_model": "anthropic/claude-haiku"
-  },
-  "review": {
-    "critical_rules": [
-      "hardcoded_credentials",
-      "sql_injection",
-      "xss_vulnerabilities",
-      "unsafe_functions",
-      "file_operations_without_validation"
-    ],
-    "warning_rules": [
-      "code_style_violations",
-      "potential_bugs",
-      "performance_issues",
-      "missing_error_handling",
-      "documentation_gaps"
-    ],
-    "file_extensions": [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h"],
-    "exclude_patterns": [
-      "node_modules/",
-      ".git/",
-      "__pycache__/",
-      "*.min.js",
-      "*.test.js",
-      "*.spec.js"
-    ]
-  },
-  "output": {
-    "format": "text",
-    "show_context": true,
-    "max_context_lines": 3
-  },
-  "fallback": {
-    "enable_static_analysis": true,
-    "allow_commit_on_unavailable": true
-  }
-}
-```
-
-### Environment Variables
-
-Environment variables take precedence over config file settings:
+### 1. Install
 
 ```bash
-# Required: API key for LLM
-LLM_API_KEY="your-api-key"
-
-# Optional: Override base URL from config
-LLM_BASE_URL="https://api.opencode.ai/v1"
-
-# Optional: Override model from config
-LLM_MODEL="anthropic/claude-sonnet-4"
-
-# Optional: Custom configuration file
-REVIEW_CONFIG_FILE="custom-config.json"
+git clone https://github.com/pashokred/cl-llm.git
+cd cl-llm
+./install.sh
 ```
 
-## 🚨 Exit Codes
+### 2. Configure API Key
 
-| Exit Code | Meaning | Git Action |
-|-----------|---------|-------------|
-| 0 | Success | ✅ Allow |
-| 1 | Critical Issues | ❌ Block |
-| 2 | Warnings Only | ⚠️ Allow |
-| 3 | Model Unavailable | ⚠️ Allow |
-| 4 | Configuration Error | ❌ Block |
-
-## 📊 Monitoring
-
-### Health Check
 ```bash
-# Comprehensive system health check
-python monitor.py health
+# Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
+export LLM_API_KEY="your-api-key"
 ```
 
-### Generate Reports
-```bash
-# Last 7 days report
-python monitor.py report --days 7
+### 3. Run Review
 
-# Custom period
-python monitor.py report --days 30
+```bash
+cd /path/to/your/project
+/path/to/cl-llm/.venv/bin/python /path/to/cl-llm/review.py --mode staged
 ```
 
-## 🔄 Integration Examples
+## Global Installation (Recommended)
 
-### OpenCode.ai Setup (Claude)
+Install the `llm-review` command system-wide:
+
 ```bash
-export LLM_API_KEY="your-opencode-key"
-export LLM_BASE_URL="https://api.opencode.ai/v1"
-export LLM_MODEL="anthropic/claude-sonnet-4"
+./install.sh --global
 ```
 
-### OpenAI Setup
+Now use from any directory:
+
 ```bash
-export LLM_API_KEY="your-openai-key"
+cd ~/my-project
+llm-review --mode staged        # Review staged changes
+llm-review --mode all           # Review all uncommitted changes
+llm-review --test-connection    # Test API connection
+```
+
+## Git Hook Integration
+
+Automatically review code before every commit:
+
+```bash
+cd ~/my-project
+/path/to/cl-llm/install.sh --hook
+```
+
+Or install both global command and hook:
+
+```bash
+./install.sh --global --hook
+```
+
+## Supported LLM Providers
+
+### OpenAI
+```bash
+export LLM_API_KEY="sk-..."
 export LLM_BASE_URL="https://api.openai.com/v1"
 export LLM_MODEL="gpt-4"
 ```
 
-### Local Ollama Setup
+### Anthropic (via OpenRouter)
+```bash
+export LLM_API_KEY="your-openrouter-key"
+export LLM_BASE_URL="https://openrouter.ai/api/v1"
+export LLM_MODEL="anthropic/claude-sonnet-4"
+```
+
+### Local Ollama
 ```bash
 export LLM_API_KEY="ollama"
 export LLM_BASE_URL="http://localhost:11434/v1"
 export LLM_MODEL="llama3.2"
 ```
 
-## 🛡️ Security Features
+## CLI Reference
 
-### Critical Issues (Block Commit)
+```bash
+llm-review --mode staged          # Review staged changes (default)
+llm-review --mode unstaged        # Review unstaged changes
+llm-review --mode all             # Review all uncommitted changes
+llm-review --base main --head dev # Compare branches
+llm-review --format json          # JSON output for CI/CD
+llm-review --strict               # Block on warnings too
+llm-review --verbose              # Detailed output
+llm-review --test-connection      # Test API connectivity
+```
+
+## Configuration
+
+Edit `review_config.json` to customize rules, or use environment variables:
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `LLM_API_KEY` | API key for LLM service | Yes |
+| `LLM_BASE_URL` | API endpoint URL | No (uses config) |
+| `LLM_MODEL` | Model name | No (uses config) |
+
+See `review_config_example.json` for full configuration options.
+
+## Exit Codes
+
+| Code | Meaning | Git Hook Action |
+|------|---------|-----------------|
+| 0 | No issues | Allow commit |
+| 1 | Critical issues | Block commit |
+| 2 | Warnings only | Allow commit |
+| 3 | LLM unavailable | Allow (static fallback) |
+| 4 | Config error | Block commit |
+
+## What It Detects
+
+**Critical (blocks commit):**
 - Hardcoded credentials, API keys, secrets
 - SQL injection, XSS vulnerabilities
-- Unsafe functions (eval(), exec(), system())
-- Direct file system operations without validation
-- Network requests to external endpoints without validation
+- Unsafe functions (`eval()`, `exec()`, `system()`)
 
-### Warnings (Allow Commit)
-- Code style violations
-- Potential bugs and edge cases
-- Performance issues
+**Warnings (allows commit):**
+- Code style issues
+- Potential bugs
 - Missing error handling
-- Input validation gaps
 
-### Static Analysis Fallback
-- Pattern-based security checks
-- No external dependencies
-- Works completely offline
-- Rules-based vulnerability detection
+## GitHub Actions
 
-## 🚀 GitHub Actions Setup
+Add to your workflow:
 
-### Repository Secrets
-Set these in GitHub repository settings:
-- `LLM_API_KEY`: Your LLM API key (required)
-- `LLM_BASE_URL`: Your LLM endpoint (optional, overrides config)
-- `LLM_MODEL`: Model name (optional, overrides config)
-
-### Workflow Features
-- **Pull Request Reviews**: Automatic analysis and commenting
-- **Status Checks**: Integration with GitHub branch protection
-- **Artifacts**: Detailed JSON results saved as artifacts
-- **Fallback Handling**: Graceful degradation when LLM unavailable
-
-## 📁 Project Structure
-
-```
-cl-llm/
-├── review.py                 # CLI interface
-├── review_core.py            # LLM integration
-├── diff_parser.py           # Git diff processing
-├── config.py                # Configuration management
-├── static_analyzer.py       # Fallback static analysis
-├── monitor.py               # Monitoring utilities
-├── install_hooks.py         # Hook installation
-├── hooks/                   # Git hooks scripts
-│   ├── pre-commit
-│   └── pre-push
-├── .github/workflows/       # GitHub Actions
-│   └── llm-review.yml
-├── review_config.json       # Configuration
-├── review_config_example.json # Example config (OpenAI)
-├── requirements.txt         # Dependencies
-├── logs/                   # Review logs
-└── README.md              # This file
+```yaml
+- name: LLM Code Review
+  env:
+    LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+  run: |
+    pip install openai
+    python review.py --mode staged --format json
 ```
 
-## 🔧 Troubleshooting
+Set `LLM_API_KEY` in repository secrets.
 
-### Common Issues
+## Troubleshooting
 
-#### "Model not found" Error
 ```bash
-# Check your configuration
-python review.py --test-connection
+# Test API connection
+llm-review --test-connection
 
-# Verify model name in review_config.json
-# Check API endpoint accessibility
-```
+# Verbose output
+llm-review --mode staged --verbose
 
-#### Git Hooks Not Working
-```bash
-# Reinstall hooks
-python install_hooks.py
-
-# Check hook permissions
-ls -la .git/hooks/
-
-# Test manually
-.git/hooks/pre-commit
-```
-
-#### LLM Unavailable
-```bash
-# System falls back to static analysis automatically
-# Check network connectivity
+# Health check
 python monitor.py health
 ```
 
-### Debug Mode
-```bash
-# Enable verbose logging
-export REVIEW_DEBUG=1
-python review.py --mode staged --verbose
+## Project Structure
+
+```
+cl-llm/
+├── install.sh           # Installation script
+├── review.py            # CLI entry point
+├── review_core.py       # LLM integration
+├── config.py            # Configuration management
+├── static_analyzer.py   # Fallback analysis
+├── review_config.json   # Your configuration
+└── review_config_example.json
 ```
 
-## 🤝 Contributing
+## License
 
-### Adding New Rules
-1. Update `static_analyzer.py` with new pattern checks
-2. Add rule to `review_config.json`
-3. Update documentation
-4. Add tests
-
-### Adding New Model Support
-1. Update `config.py` with model configuration
-2. Add any required API adapters
-3. Update documentation
-4. Test with `--test-connection`
-
-## 📄 License
-
-Internal corporate use only.
-
----
-
-## 🆘 Support
-
-For issues and questions:
-1. Check troubleshooting section
-2. Run `python monitor.py health`
-3. Review logs in `logs/` directory
-4. Contact infrastructure team for LLM endpoint issues
+MIT
