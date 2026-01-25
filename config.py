@@ -55,6 +55,7 @@ class ReviewConfig:
                 ".c",
                 ".h",
                 ".rs",
+                ".go",
             ],
             "exclude_patterns": [
                 "node_modules/",
