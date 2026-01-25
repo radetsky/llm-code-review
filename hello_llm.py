@@ -1,11 +1,11 @@
 # hello_llm.py
 """
-Модуль для отримання відповіді від LLM за допомогою OpenAI SDK.
+Simple helper to fetch an LLM reply via the OpenAI SDK.
 
-Параметри можна налаштувати через змінні середовища:
-- SECRET_LLM_API_KEY – ключ API
-- LLM_BASE_URL   – URL базового API (за замовчуванням `https://llm.dev.cossacklabs.com/api`)
-- LLM_MODEL      – модель, яку використовувати (за замовчуванням `gpt-oss:20b`)
+Environment variables:
+- LLM_API_KEY  – API key (required)
+- LLM_BASE_URL – Base API URL (default: `https://llm.dev.cossacklabs.com/api`)
+- LLM_MODEL    – Model name (default: `gpt-oss:20b`)
 """
 
 import os
@@ -16,7 +16,7 @@ from openai import OpenAI
 from openai import OpenAIError
 
 
-# Налаштування логування
+# Basic logging setup
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     level=logging.INFO,
@@ -25,27 +25,17 @@ log = logging.getLogger(__name__)
 
 
 def get_client() -> OpenAI:
-    """
-    Створює та повертає клієнт OpenAI, перевіряючи необхідні змінні середовища.
-    """
-    api_key = os.getenv("SECRET_LLM_API_KEY")
+    """Create and return an OpenAI client using the required environment variables."""
+    api_key = os.getenv("LLM_API_KEY")
     if not api_key:
-        raise EnvironmentError(
-            "SECRET_LLM_API_KEY is not set in the environment."
-        )
+        raise EnvironmentError("LLM_API_KEY is not set in the environment.")
 
     base_url = os.getenv("LLM_BASE_URL", "https://llm.dev.cossacklabs.com/api")
     return OpenAI(base_url=base_url, api_key=api_key)
 
 
 def ask_gpt(message: str, *, model: Optional[str] = None) -> str:
-    """
-    Повертає відповідь LLM на надане повідомлення.
-
-    :param message: Текст запиту користувача
-    :param model: Назва моделі (за замовчуванням береться зі змінної `LLM_MODEL`)
-    :return: Відповідь моделі
-    """
+    """Return the LLM response to the provided message."""
     client = get_client()
     model = model or os.getenv("LLM_MODEL", "gpt-oss:20b")
 
@@ -57,12 +47,12 @@ def ask_gpt(message: str, *, model: Optional[str] = None) -> str:
         log.error("OpenAI API call failed: %s", exc)
         raise
 
-    # Відповідь повертається як рядок
+    # Ensure we always return a string
     return response.choices[0].message.content or ""
 
 
 def main() -> None:
-    message = "Привіт, як справи?"
+    message = "¡Hola, que pasa, tio?"
     log.info("Sending message to LLM: %s", message)
     answer = ask_gpt(message)
     print(answer)
@@ -70,4 +60,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

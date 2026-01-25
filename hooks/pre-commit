@@ -2,7 +2,7 @@
 # Pre-commit hook for LLM code review
 # This hook runs before any commit is made
 
-set -e  # Exit on any error
+set +e  # Exit on any error
 
 echo "🔍 Running LLM code review..."
 
@@ -15,6 +15,9 @@ fi
 # Run review on staged changes
 python review.py --mode staged --format text 2>/dev/null
 exit_code=$?
+set -e  # Re-enable exit on error
+
+echo "Exit code: $exit_code"
 
 # Handle different exit codes
 case $exit_code in
