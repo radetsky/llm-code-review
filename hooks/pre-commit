@@ -16,6 +16,8 @@ fi
 python review.py --mode staged --format text 2>/dev/null
 exit_code=$?
 
+echo "Exit code: $exit_code"
+
 # Handle different exit codes
 case $exit_code in
     0)
