@@ -2,8 +2,7 @@
 # Pre-push hook for LLM code review
 # This hook runs before any push is made to remote repository
 
-set -e  # Exit on any error
-
+set +e
 echo "🚀 Running comprehensive LLM code review before push..."
 
 # Check if review.py exists
@@ -20,6 +19,9 @@ echo "📊 Analyzing changes since last push..."
 # Run review on all changes since last push
 python review.py --mode all --format json > "$REVIEW_RESULT_FILE" 2>/dev/null
 exit_code=$?
+
+echo "Exit code: $exit_code"
+set -e  # Re-enable exit on error
 
 # Save results for analysis
 echo "📋 Review results saved to: $REVIEW_RESULT_FILE"
