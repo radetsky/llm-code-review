@@ -26,17 +26,18 @@ class ReviewResult:
 
 class LLMReviewer:
     """Handles LLM interactions for code review."""
-    
-    REVIEW_PROMPT = """You are a security-focused code reviewer. Analyze the following git diff changes for:
+
+    DEFAULT_PROMPT = """You are a security-focused code reviewer. Analyze the following git diff changes for:
 
 CRITICAL ISSUES (block commit):
 - Hardcoded credentials, API keys, secrets
-- SQL injection, XSS vulnerabilities  
+- SQL injection, XSS vulnerabilities
 - Unsafe functions (eval(), exec(), system())
 - Direct file system operations without validation
 - Network requests to external endpoints without proper validation
 - Buffer overflow risks
 - Command injection vulnerabilities
+{custom_critical_rules}
 
 WARNINGS (allow commit but flag):
 - Code style violations
@@ -45,15 +46,19 @@ WARNINGS (allow commit but flag):
 - Missing error handling
 - Input validation gaps
 - Documentation gaps
+{custom_warnings}
 
 SUGGESTIONS (improvements):
 - Best practices recommendations
 - Code organization improvements
 - Security enhancements
+{custom_suggestions}
+
+{additional_instructions}
 
 Format your response as:
 CRITICAL: [issue description]
-WARNING: [issue description]  
+WARNING: [issue description]
 SUGGESTION: [suggestion]
 
 If no issues found for a category, respond "NONE".
@@ -67,6 +72,49 @@ Focus on security vulnerabilities first, then code quality."""
         self.config = config
         self.client = None
         self._setup_logging()
+
+    def _build_prompt(self, diff_content: str) -> str:
+        """Build review prompt from config or use default."""
+        prompt_config = self.config.get("prompt") or {}
+        if not isinstance(prompt_config, dict):
+            prompt_config = {}
+
+        custom_prompt = prompt_config.get("custom_prompt")
+        if custom_prompt and isinstance(custom_prompt, str):
+            try:
+                return custom_prompt.format(diff_content=diff_content)
+            except KeyError as e:
+                self.logger.warning(f"Custom prompt has invalid placeholder: {e}. Using default.")
+
+        custom_critical = prompt_config.get("custom_critical_rules") or []
+        custom_warnings = prompt_config.get("custom_warnings") or []
+        custom_suggestions = prompt_config.get("custom_suggestions") or []
+        additional = prompt_config.get("additional_instructions") or ""
+
+        if not isinstance(custom_critical, list):
+            custom_critical = []
+        if not isinstance(custom_warnings, list):
+            custom_warnings = []
+        if not isinstance(custom_suggestions, list):
+            custom_suggestions = []
+        if not isinstance(additional, str):
+            additional = ""
+
+        critical_str = "\n".join(f"- {rule}" for rule in custom_critical if isinstance(rule, str))
+        warnings_str = "\n".join(f"- {rule}" for rule in custom_warnings if isinstance(rule, str))
+        suggestions_str = "\n".join(f"- {rule}" for rule in custom_suggestions if isinstance(rule, str))
+
+        try:
+            return self.DEFAULT_PROMPT.format(
+                diff_content=diff_content,
+                custom_critical_rules=critical_str,
+                custom_warnings=warnings_str,
+                custom_suggestions=suggestions_str,
+                additional_instructions=additional
+            )
+        except KeyError as e:
+            self.logger.error(f"Prompt template error: {e}. Using minimal prompt.")
+            return f"Review this code diff for security issues:\n\n{diff_content}"
     
     def _setup_logging(self):
         """Setup logging configuration."""
@@ -140,8 +188,8 @@ Focus on security vulnerabilities first, then code quality."""
         """Make LLM API call."""
         client = self._get_client()
         model = self.config.get_model()
-        
-        prompt = self.REVIEW_PROMPT.format(diff_content=diff_content)
+
+        prompt = self._build_prompt(diff_content)
         
         try:
             response = client.chat.completions.create(

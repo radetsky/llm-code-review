@@ -7,6 +7,13 @@
     "max_retries": 3,
     "fallback_model": "anthropic/claude-haiku"
   },
+  "prompt": {
+    "custom_prompt": null,
+    "custom_critical_rules": [],
+    "custom_warnings": [],
+    "custom_suggestions": [],
+    "additional_instructions": null
+  },
   "review": {
     "critical_rules": [
       "hardcoded_credentials",

@@ -6,10 +6,20 @@ Supports multiple review modes and output formats.
 
 import argparse
 import json
+import logging
 import sys
 import os
 from typing import Dict, Any, Optional
 from pathlib import Path
+
+
+def setup_logging(verbose: bool = False):
+    """Configure logging based on verbosity level."""
+    level = logging.DEBUG if verbose else logging.WARNING
+    logging.basicConfig(
+        level=level,
+        format='%(levelname)s: %(message)s'
+    )
 
 # Add current directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -31,7 +41,10 @@ class ReviewCLI:
         """Run CLI with provided arguments."""
         parser = self._create_parser()
         parsed_args = parser.parse_args(args)
-        
+
+        # Setup logging based on verbosity
+        setup_logging(getattr(parsed_args, 'verbose', False))
+
         # Handle test-connection before validation
         if parsed_args.test_connection:
             if not self._validate_config():

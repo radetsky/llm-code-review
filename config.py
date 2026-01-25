@@ -4,8 +4,11 @@ Configuration management for LLM code review system.
 
 import os
 import json
+import logging
 from typing import Dict, Any, Optional
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class ReviewConfig:
@@ -19,10 +22,17 @@ class ReviewConfig:
             "timeout": 30,
             "max_retries": 3
         },
+        "prompt": {
+            "custom_prompt": None,
+            "custom_critical_rules": [],
+            "custom_warnings": [],
+            "custom_suggestions": [],
+            "additional_instructions": None
+        },
         "review": {
             "critical_rules": [
                 "hardcoded_credentials",
-                "sql_injection", 
+                "sql_injection",
                 "xss_vulnerabilities",
                 "unsafe_functions",
                 "file_operations_without_validation"
@@ -34,7 +44,7 @@ class ReviewConfig:
                 "missing_error_handling",
                 "documentation_gaps"
             ],
-            "file_extensions": [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h"],
+            "file_extensions": [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h", ".rs"],
             "exclude_patterns": [
                 "node_modules/",
                 ".git/",
@@ -67,10 +77,11 @@ class ReviewConfig:
             try:
                 with open(config_path, 'r') as f:
                     user_config = json.load(f)
+                logger.debug("Loaded configuration from %s", self.config_file)
                 return self._merge_configs(self.DEFAULT_CONFIG, user_config)
             except (json.JSONDecodeError, IOError) as e:
-                print(f"Warning: Could not load config file {self.config_file}: {e}")
-                print("Using default configuration.")
+                logger.warning("Could not load config file %s: %s", self.config_file, e)
+                logger.info("Using default configuration")
         
         return self.DEFAULT_CONFIG.copy()
     
@@ -102,23 +113,39 @@ class ReviewConfig:
         """Get API key from environment. LLM_API_KEY takes precedence."""
         env_key = os.getenv("LLM_API_KEY")
         if env_key:
+            logger.debug("Using API key from LLM_API_KEY environment variable")
             return env_key
+
         api_key_env = self.get("llm.api_key_env")
-        return os.getenv(api_key_env)
+        fallback_key = os.getenv(api_key_env) if api_key_env else None
+        if fallback_key:
+            logger.debug("Using API key from %s environment variable", api_key_env)
+            return fallback_key
+
+        logger.warning("API key not found. Set LLM_API_KEY environment variable.")
+        return None
 
     def get_base_url(self) -> str:
         """Get LLM base URL. Environment variable takes precedence over config."""
         env_url = os.getenv("LLM_BASE_URL")
         if env_url:
+            logger.debug("Using base URL from LLM_BASE_URL: %s", env_url)
             return env_url
-        return self.get("llm.base_url")
+
+        config_url = self.get("llm.base_url")
+        logger.debug("Using base URL from config: %s", config_url)
+        return config_url
 
     def get_model(self) -> str:
         """Get LLM model name. Environment variable takes precedence over config."""
         env_model = os.getenv("LLM_MODEL")
         if env_model:
+            logger.debug("Using model from LLM_MODEL: %s", env_model)
             return env_model
-        return self.get("llm.model")
+
+        config_model = self.get("llm.model")
+        logger.debug("Using model from config: %s", config_model)
+        return config_model
     
     def is_file_supported(self, file_path: str) -> bool:
         """Check if file extension is supported for review."""
@@ -141,5 +168,6 @@ class ReviewConfig:
         try:
             with open(self.config_file, 'w') as f:
                 json.dump(self.config, f, indent=2)
+            logger.debug("Saved configuration to %s", self.config_file)
         except IOError as e:
-            print(f"Error: Could not save config file {self.config_file}: {e}")
+            logger.error("Could not save config file %s: %s", self.config_file, e)

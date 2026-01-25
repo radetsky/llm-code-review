@@ -1,0 +1,38 @@
+{
+  "llm": {
+    "model": "anthropic/claude-sonnet-4",
+    "base_url": "https://api.opencode.ai/v1",
+    "api_key_env": "LLM_API_KEY",
+    "timeout": 30,
+    "max_retries": 3
+  },
+  "prompt": {
+    "custom_prompt": null,
+    "custom_critical_rules": [
+      "Rust `unsafe` blocks - block any use of `unsafe` keyword without proper justification",
+      "Raw pointer dereferencing without safety guarantees",
+      "Use of `std::mem::transmute` or other unsafe memory operations",
+      "FFI calls without proper validation"
+    ],
+    "custom_warnings": [
+      "Missing `#[derive(...)]` macros for structs (Debug, Clone, etc.)",
+      "Unwrap() or expect() in production code - prefer proper error handling",
+      "Clone on large structs - consider using references",
+      "Mutex without proper lock handling"
+    ],
+    "custom_suggestions": [
+      "Use `clippy` lint suggestions",
+      "Consider using `thiserror` for error types",
+      "Use `serde` derives for serialization"
+    ],
+    "additional_instructions": "This is a Rust project. Pay special attention to memory safety, ownership rules, and lifetime annotations. Any use of `unsafe` must be thoroughly justified."
+  },
+  "review": {
+    "file_extensions": [".rs", ".toml"],
+    "exclude_patterns": [
+      "target/",
+      ".git/",
+      "Cargo.lock"
+    ]
+  }
+}

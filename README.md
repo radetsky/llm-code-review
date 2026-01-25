@@ -5,6 +5,7 @@ Automated code review powered by LLM. Works with any OpenAI-compatible API (Open
 ## Features
 
 - **Security-focused** - Detects credentials, SQL injection, XSS, unsafe functions
+- **Customizable rules** - Add project-specific review rules via config
 - **Multiple modes** - CLI, Git hooks, GitHub Actions
 - **Flexible** - Works with any OpenAI-compatible endpoint
 - **Graceful fallback** - Static analysis when LLM unavailable
@@ -111,7 +112,40 @@ Edit `review_config.json` to customize rules, or use environment variables:
 | `LLM_BASE_URL` | API endpoint URL | No (uses config) |
 | `LLM_MODEL` | Model name | No (uses config) |
 
-See `review_config_example.json` for full configuration options.
+### Custom Review Rules
+
+Add project-specific rules to the `prompt` section in `review_config.json`:
+
+```json
+{
+  "prompt": {
+    "custom_critical_rules": [
+      "Rust `unsafe` blocks - block any use of `unsafe` keyword",
+      "Raw SQL queries without parameterization"
+    ],
+    "custom_warnings": [
+      "Missing error handling with unwrap()",
+      "Clone on large structs"
+    ],
+    "custom_suggestions": [
+      "Use clippy lint suggestions"
+    ],
+    "additional_instructions": "This is a Rust project. Pay special attention to memory safety."
+  }
+}
+```
+
+**Options:**
+- `custom_critical_rules` - Additional rules that block commits
+- `custom_warnings` - Additional rules that warn but allow commits
+- `custom_suggestions` - Additional improvement suggestions
+- `additional_instructions` - Extra context for the LLM (language, framework, etc.)
+- `custom_prompt` - Completely replace the default prompt (advanced)
+
+### Example Configs
+
+- `review_config_example.json` - OpenAI configuration
+- `review_config_rust_example.json` - Rust project with unsafe block detection
 
 ## Exit Codes
 
@@ -129,11 +163,14 @@ See `review_config_example.json` for full configuration options.
 - Hardcoded credentials, API keys, secrets
 - SQL injection, XSS vulnerabilities
 - Unsafe functions (`eval()`, `exec()`, `system()`)
+- Command injection, buffer overflow risks
+- *Plus your custom critical rules*
 
 **Warnings (allows commit):**
 - Code style issues
 - Potential bugs
 - Missing error handling
+- *Plus your custom warnings*
 
 ## GitHub Actions
 
@@ -167,13 +204,14 @@ python monitor.py health
 
 ```
 cl-llm/
-├── install.sh           # Installation script
-├── review.py            # CLI entry point
-├── review_core.py       # LLM integration
-├── config.py            # Configuration management
-├── static_analyzer.py   # Fallback analysis
-├── review_config.json   # Your configuration
-└── review_config_example.json
+├── install.sh                    # Installation script
+├── review.py                     # CLI entry point
+├── review_core.py                # LLM integration & prompt building
+├── config.py                     # Configuration management
+├── static_analyzer.py            # Fallback analysis
+├── review_config.json            # Your configuration
+├── review_config_example.json    # OpenAI example
+└── review_config_rust_example.json  # Rust project example
 ```
 
 ## License
