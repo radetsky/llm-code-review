@@ -70,10 +70,11 @@ Changes to review:
 
 Focus on security vulnerabilities first, then code quality."""
 
-    def __init__(self, config, trace: bool = False):
+    def __init__(self, config, trace: bool = False, trace_llm: bool = False):
         self.config = config
         self.client = None
         self.trace = trace
+        self.trace_llm = trace_llm
         self._setup_logging()
 
     def _build_prompt(self, diff_content: str) -> str:
@@ -414,6 +415,29 @@ Focus on security vulnerabilities first, then code quality."""
 
             print(f"[TRACE] {message}", file=sys.stderr)
 
+    def _trace_llm_request(self, prompt: str, model: str, base_url: str):
+        """Output full LLM request when LLM tracing is enabled."""
+        if not self.trace_llm:
+            return
+
+        import sys
+
+        print("----- LLM REQUEST BEGIN -----", file=sys.stderr)
+        print(f"model={model} base_url={base_url}", file=sys.stderr)
+        print(prompt, file=sys.stderr)
+        print("----- LLM REQUEST END -----", file=sys.stderr)
+
+    def _trace_llm_response(self, response: str):
+        """Output full LLM response when LLM tracing is enabled."""
+        if not self.trace_llm:
+            return
+
+        import sys
+
+        print("----- LLM RESPONSE BEGIN -----", file=sys.stderr)
+        print(response, file=sys.stderr)
+        print("----- LLM RESPONSE END -----", file=sys.stderr)
+
     def _call_llm(self, diff_content: str) -> ReviewResult:
         """Make LLM API call."""
         client = self._get_client()
@@ -425,6 +449,7 @@ Focus on security vulnerabilities first, then code quality."""
 
         self._trace_print(f"LLM Query: model={model}, base_url={base_url}")
         self._trace_print(f"LLM Query: estimated_tokens={prompt_tokens}")
+        self._trace_llm_request(prompt, model, base_url)
 
         try:
             response = client.chat.completions.create(
@@ -439,6 +464,7 @@ Focus on security vulnerabilities first, then code quality."""
         raw_response = response.choices[0].message.content or ""
         response_tokens = self._estimate_tokens(raw_response)
         self._trace_print(f"LLM Response: received ~{response_tokens} tokens")
+        self._trace_llm_response(raw_response)
 
         return self._parse_llm_response(raw_response)
 

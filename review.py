@@ -28,11 +28,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 class ReviewCLI:
     """Command-line interface for code review."""
 
-    def __init__(self, trace: bool = False):
+    def __init__(self, trace: bool = False, trace_llm: bool = False):
         self.config = ReviewConfig()
         self.parser = DiffParser(self.config)
-        self.reviewer = LLMReviewer(self.config, trace=trace)
+        self.reviewer = LLMReviewer(self.config, trace=trace, trace_llm=trace_llm)
         self.trace = trace
+        self.trace_llm = trace_llm
 
     def run(self, args=None):
         """Run CLI with provided arguments."""
@@ -44,7 +45,9 @@ class ReviewCLI:
 
         # Update trace mode if specified
         self.trace = getattr(parsed_args, "trace", False)
+        self.trace_llm = getattr(parsed_args, "trace_llm", False)
         self.reviewer.trace = self.trace
+        self.reviewer.trace_llm = self.trace_llm
 
         # Handle test-connection before validation
         if parsed_args.test_connection:
@@ -145,6 +148,11 @@ Examples:
             "--trace",
             action="store_true",
             help="Trace output showing LLM queries and tool usage",
+        )
+        parser.add_argument(
+            "--trace-llm",
+            action="store_true",
+            help="Dump full LLM prompts and responses to stderr",
         )
 
         # Utility commands
@@ -290,7 +298,7 @@ Examples:
 
 def main():
     """Main entry point."""
-    cli = ReviewCLI(trace=False)
+    cli = ReviewCLI(trace=False, trace_llm=False)
     exit_code = cli.run()
     sys.exit(exit_code)
 
