@@ -11,6 +11,9 @@ LLM-powered code review system with three integration modes:
 
 Uses OpenAI-compatible LLM API (configurable model and endpoint).
 
+### Supported Languages
+Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++, Go
+
 ## Common Commands
 
 ```bash
@@ -35,6 +38,11 @@ python review.py --test-connection          # Test LLM API connectivity
 
 # Install git hooks
 python install_hooks.py
+
+# Code formatting and linting
+ruff format .                               # Format all Python files
+ruff check .                                # Lint all Python files
+ruff check --fix .                          # Auto-fix linting issues
 
 # Monitoring
 python monitor.py health                    # System health check
@@ -88,3 +96,4 @@ static_analyzer.py  Fallback security analysis when LLM unavailable
 - **All code comments must be in English**
 - Communication with users can be in Ukrainian
 - Uses fish shell for environment configuration
+- Code formatted with `ruff format` and linted with `ruff check`
