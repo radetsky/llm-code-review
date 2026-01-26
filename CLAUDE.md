@@ -86,6 +86,9 @@ static_analyzer.py  Fallback security analysis when LLM unavailable
 - `LLM_API_KEY` - API key for LLM service
 - `LLM_BASE_URL` - Override base URL (optional)
 - `LLM_MODEL` - Override model name (optional)
+- `LLM_TIMEOUT` - Request timeout in seconds (default: 180)
+- `LLM_MAX_TOKENS_PER_REQUEST` - Max tokens per review chunk (default: 4096)
+- `LLM_TOKEN_LIMIT_STRATEGY` - Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`)
 
 ### Current Setup
 - Model: `anthropic/claude-sonnet-4`

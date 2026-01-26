@@ -352,7 +352,7 @@ Focus on security vulnerabilities first, then code quality."""
                 )
 
             base_url = self.config.get_base_url()
-            timeout = self.config.get("llm.timeout", 30)
+            timeout = self.config.get_timeout()
 
             self.client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
 

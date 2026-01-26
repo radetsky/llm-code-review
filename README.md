@@ -111,6 +111,9 @@ Edit `review_config.json` to customize rules, or use environment variables:
 | `LLM_API_KEY` | API key for LLM service | Yes |
 | `LLM_BASE_URL` | API endpoint URL | No (uses config) |
 | `LLM_MODEL` | Model name | No (uses config) |
+| `LLM_TIMEOUT` | Request timeout in seconds (default: 180) | No |
+| `LLM_MAX_TOKENS_PER_REQUEST` | Max tokens per review chunk (default: 4096) | No |
+| `LLM_TOKEN_LIMIT_STRATEGY` | Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`) | No |
 
 ### Custom Review Rules
 

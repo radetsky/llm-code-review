@@ -21,6 +21,9 @@ export LLM_API_KEY="your-api-key"
 # Optional: Override base URL and model
 export LLM_BASE_URL="https://api.opencode.ai/v1"
 export LLM_MODEL="anthropic/claude-sonnet-4"
+
+# Optional: Increase timeout for large reviews (default: 180 seconds)
+export LLM_TIMEOUT="300"
 ```
 
 ## Code Patterns
@@ -35,9 +38,10 @@ from config import ReviewConfig
 config = ReviewConfig()
 
 # These methods check env vars first, then fall back to config file
-api_key = config.get_api_key()    # LLM_API_KEY env var
-base_url = config.get_base_url()  # LLM_BASE_URL env var
-model = config.get_model()        # LLM_MODEL env var
+api_key = config.get_api_key()      # LLM_API_KEY env var
+base_url = config.get_base_url()    # LLM_BASE_URL env var
+model = config.get_model()          # LLM_MODEL env var
+timeout = config.get_timeout()      # LLM_TIMEOUT env var
 ```
 
 ### Making LLM Requests
@@ -48,7 +52,8 @@ The system uses OpenAI-compatible client:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url=config.get_base_url(),
+    base_url=config.get_base_url,
+    timeout=config.get_timeout()(),
     api_key=config.get_api_key()
 )
 
