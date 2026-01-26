@@ -140,12 +140,56 @@ Add project-specific rules to the `prompt` section in `review_config.json`:
 - `custom_warnings` - Additional rules that warn but allow commits
 - `custom_suggestions` - Additional improvement suggestions
 - `additional_instructions` - Extra context for the LLM (language, framework, etc.)
-- `custom_prompt` - Completely replace the default prompt (advanced)
+- `custom_prompt` - Completely replace the default prompt with placeholders support (see below)
+
+### Custom Prompt with Placeholders
+
+For full control over the review prompt, use `custom_prompt` with placeholders:
+
+```json
+{
+  "prompt": {
+    "custom_prompt": "You are a code reviewer.\n\nCRITICAL:\n{custom_critical_rules}\n\nWARNINGS:\n{custom_warnings}\n\n{additional_instructions}\n\nReview:\n{diff_content}\n\nRespond with CRITICAL:, WARNING:, or SUGGESTION: prefixes.",
+    "custom_critical_rules": ["memory leaks", "race conditions"],
+    "custom_warnings": ["deprecated API usage"],
+    "additional_instructions": "Focus on thread safety"
+  }
+}
+```
+
+**Available placeholders:**
+- `{diff_content}` - The git diff to review
+- `{custom_critical_rules}` - Formatted list of custom critical rules
+- `{custom_warnings}` - Formatted list of custom warnings
+- `{custom_suggestions}` - Formatted list of custom suggestions
+- `{additional_instructions}` - Additional instructions text
+
+All placeholders are optional - use only the ones you need. See `custom_prompt_example.txt` for more examples.
+
+### Large Diff Handling (Chunking)
+
+For large diffs that exceed LLM token limits, the system automatically splits them into smaller chunks and reviews each separately. Configure in `review_config.json`:
+
+```json
+{
+  "llm": {
+    "max_tokens_per_request": 4096,
+    "token_limit_strategy": "chunk",
+    "chars_per_token": 4
+  }
+}
+```
+
+**Options:**
+- `max_tokens_per_request` - Maximum tokens per LLM request (default: 4096)
+- `token_limit_strategy` - Strategy for large diffs: `"chunk"` (split and review parts) or `"truncate"` (review only the beginning)
+- `chars_per_token` - Character to token ratio for estimation (default: 4)
 
 ### Example Configs
 
 - `review_config_example.json` - OpenAI configuration
 - `review_config_rust_example.json` - Rust project with unsafe block detection
+- `custom_prompt_example.txt` - Custom prompt template examples
 
 ## Exit Codes
 
@@ -266,12 +310,13 @@ llm-code-review/
 ├── action.yml                    # GitHub Action definition
 ├── install.sh                    # Installation script
 ├── review.py                     # CLI entry point
-├── review_core.py                # LLM integration & prompt building
+├── review_core.py                # LLM integration, chunking & prompt building
 ├── config.py                     # Configuration management
 ├── static_analyzer.py            # Fallback analysis
 ├── review_config.json            # Your configuration
 ├── review_config_example.json    # OpenAI example
 ├── review_config_rust_example.json  # Rust project example
+├── custom_prompt_example.txt     # Custom prompt template examples
 ├── examples/
 │   ├── workflow-basic.yml        # Basic GitHub Actions workflow
 │   └── workflow-advanced.yml     # Advanced workflow with all options
