@@ -214,7 +214,9 @@ Examples:
         lines = []
 
         # Status indicator
-        if result.status == "model_unavailable":
+        if result.status == "skipped":
+            lines.append("⏭️ Review Skipped (token limit exceeded)")
+        elif result.status == "model_unavailable":
             lines.append("🔴 LLM Model Unavailable")
         elif result.critical_issues:
             lines.append("❌ Critical Issues Found")
@@ -252,13 +254,19 @@ Examples:
             lines.append(f"   • Review Status: {result.status}")
             if result.fallback_used:
                 lines.append("   • Fallback Analysis: Yes")
+            if result.total_chunks > 0:
+                lines.append(
+                    f"   • Chunks Reviewed: {result.chunks_reviewed}/{result.total_chunks}"
+                )
             lines.append("")
 
         return "\n".join(lines)
 
     def _get_exit_code(self, result: ReviewResult, args=None) -> int:
         """Get appropriate exit code based on results."""
-        if result.status == "model_unavailable":
+        if result.status == "skipped":
+            return 5  # Review skipped due to token limit
+        elif result.status == "model_unavailable":
             return 3  # Model unavailable, allow commit with warning
         elif result.critical_issues:
             return 1  # Critical issues, block commit

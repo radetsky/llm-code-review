@@ -6,7 +6,7 @@ Based on existing hello_llm.py structure.
 import time
 import random
 import logging
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
 from openai import OpenAI, OpenAIError
@@ -16,12 +16,14 @@ from openai import OpenAI, OpenAIError
 class ReviewResult:
     """Result of LLM code review."""
 
-    status: str  # "success", "model_unavailable", "error"
+    status: str  # "success", "model_unavailable", "error", "skipped"
     critical_issues: List[str]
     warnings: List[str]
     suggestions: List[str]
     fallback_used: bool = False
     raw_response: Optional[str] = None
+    chunks_reviewed: int = 0
+    total_chunks: int = 0
 
 
 class LLMReviewer:
@@ -124,6 +126,203 @@ Focus on security vulnerabilities first, then code quality."""
             self.logger.error(f"Prompt template error: {e}. Using minimal prompt.")
             return f"Review this code diff for security issues:\n\n{diff_content}"
 
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count from character count."""
+        chars_per_token = self.config.get_chars_per_token()
+        return len(text) // chars_per_token
+
+    def _check_token_limit(self, prompt: str) -> Tuple[bool, int, int]:
+        """Check if prompt exceeds token limit.
+
+        Returns:
+            Tuple of (exceeds_limit, estimated_tokens, max_tokens)
+        """
+        max_tokens = self.config.get_max_tokens()
+        estimated_tokens = self._estimate_tokens(prompt)
+        exceeds = estimated_tokens > max_tokens
+        if exceeds:
+            self.logger.warning(
+                f"Prompt exceeds token limit: ~{estimated_tokens} tokens (limit: {max_tokens})"
+            )
+        return (exceeds, estimated_tokens, max_tokens)
+
+    def _truncate_diff(
+        self, diff_content: str, max_chars: int
+    ) -> Tuple[str, List[str]]:
+        """Truncate diff at file boundaries to fit within character limit.
+
+        Returns:
+            Tuple of (truncated_diff, list of skipped files)
+        """
+        lines = diff_content.split("\n")
+        result_lines = []
+        current_size = 0
+        skipped_files = []
+        current_file = None
+        file_start_idx = 0
+
+        for i, line in enumerate(lines):
+            if line.startswith("diff --git") or line.startswith("File:"):
+                if current_file and current_size > max_chars:
+                    result_lines = result_lines[:file_start_idx]
+                    skipped_files.append(current_file)
+                current_file = line
+                file_start_idx = len(result_lines)
+
+            line_size = len(line) + 1
+            if current_size + line_size <= max_chars:
+                result_lines.append(line)
+                current_size += line_size
+            elif not skipped_files or current_file not in skipped_files:
+                if current_file:
+                    skipped_files.append(current_file)
+
+        return ("\n".join(result_lines), skipped_files)
+
+    def _chunk_diff(self, diff_content: str, max_chars: int) -> List[str]:
+        """Split diff into chunks at file boundaries.
+
+        Each chunk will contain complete files and fit within the character limit.
+        """
+        chunks = []
+        current_chunk_lines = []
+        current_chunk_size = 0
+        current_file_lines = []
+        current_file_size = 0
+
+        lines = diff_content.split("\n")
+
+        for line in lines:
+            is_file_boundary = line.startswith("diff --git") or line.startswith("File:")
+
+            if is_file_boundary and current_file_lines:
+                if current_chunk_size + current_file_size <= max_chars:
+                    current_chunk_lines.extend(current_file_lines)
+                    current_chunk_size += current_file_size
+                else:
+                    if current_chunk_lines:
+                        chunks.append("\n".join(current_chunk_lines))
+                    current_chunk_lines = current_file_lines.copy()
+                    current_chunk_size = current_file_size
+
+                current_file_lines = []
+                current_file_size = 0
+
+            current_file_lines.append(line)
+            current_file_size += len(line) + 1
+
+        if current_file_lines:
+            if current_chunk_size + current_file_size <= max_chars:
+                current_chunk_lines.extend(current_file_lines)
+            else:
+                if current_chunk_lines:
+                    chunks.append("\n".join(current_chunk_lines))
+                current_chunk_lines = current_file_lines
+
+        if current_chunk_lines:
+            chunks.append("\n".join(current_chunk_lines))
+
+        return chunks if chunks else [diff_content]
+
+    def _handle_token_limit_exceeded(
+        self, diff_content: str, estimated_tokens: int, max_tokens: int
+    ) -> ReviewResult:
+        """Handle case when token limit is exceeded based on configured strategy."""
+        strategy = self.config.get_token_limit_strategy()
+        chars_per_token = self.config.get_chars_per_token()
+        max_diff_chars = max_tokens * chars_per_token
+
+        prompt_overhead = len(self._build_prompt(""))
+        available_diff_chars = max_diff_chars - prompt_overhead
+
+        self.logger.info(f"Token limit exceeded. Using strategy: {strategy}")
+
+        if strategy == "skip":
+            return ReviewResult(
+                status="skipped",
+                critical_issues=[],
+                warnings=[
+                    f"Review skipped: diff too large (~{estimated_tokens} tokens, limit: {max_tokens})"
+                ],
+                suggestions=[
+                    "Consider reviewing smaller changesets or increasing max_tokens_per_request"
+                ],
+            )
+
+        elif strategy == "truncate":
+            truncated_diff, skipped_files = self._truncate_diff(
+                diff_content, available_diff_chars
+            )
+
+            if not truncated_diff.strip():
+                return ReviewResult(
+                    status="skipped",
+                    critical_issues=[],
+                    warnings=[
+                        "Review skipped: could not fit any complete files within token limit"
+                    ],
+                    suggestions=[],
+                )
+
+            result = self._call_llm(truncated_diff)
+            if skipped_files:
+                result.warnings.append(
+                    f"Truncated review: {len(skipped_files)} file(s) skipped due to size limit"
+                )
+            return result
+
+        else:  # chunk strategy (default)
+            return self._review_chunks(diff_content, available_diff_chars)
+
+    def _review_chunks(
+        self, diff_content: str, max_chars_per_chunk: int
+    ) -> ReviewResult:
+        """Review diff in multiple chunks and aggregate results."""
+        chunks = self._chunk_diff(diff_content, max_chars_per_chunk)
+        total_chunks = len(chunks)
+
+        self.logger.info(f"Splitting diff into {total_chunks} chunks for review")
+
+        all_critical = []
+        all_warnings = []
+        all_suggestions = []
+        chunks_reviewed = 0
+        raw_responses = []
+
+        for i, chunk in enumerate(chunks):
+            self.logger.info(f"Reviewing chunk {i + 1}/{total_chunks}")
+            try:
+                result = self._call_llm(chunk)
+                all_critical.extend(result.critical_issues)
+                all_warnings.extend(result.warnings)
+                all_suggestions.extend(result.suggestions)
+                chunks_reviewed += 1
+                if result.raw_response:
+                    raw_responses.append(
+                        f"--- Chunk {i + 1} ---\n{result.raw_response}"
+                    )
+            except Exception as e:
+                self.logger.warning(f"Failed to review chunk {i + 1}: {e}")
+                all_warnings.append(
+                    f"Chunk {i + 1}/{total_chunks} review failed: {str(e)}"
+                )
+
+        unique_critical = list(dict.fromkeys(all_critical))
+        unique_warnings = list(dict.fromkeys(all_warnings))
+        unique_suggestions = list(dict.fromkeys(all_suggestions))
+
+        status = "success" if chunks_reviewed > 0 else "error"
+
+        return ReviewResult(
+            status=status,
+            critical_issues=unique_critical,
+            warnings=unique_warnings,
+            suggestions=unique_suggestions,
+            raw_response="\n\n".join(raw_responses) if raw_responses else None,
+            chunks_reviewed=chunks_reviewed,
+            total_chunks=total_chunks,
+        )
+
     def _setup_logging(self):
         """Setup logging configuration."""
         logging.basicConfig(
@@ -153,6 +352,14 @@ Focus on security vulnerabilities first, then code quality."""
         if not diff_content.strip() or diff_content == "No code changes to review.":
             return ReviewResult(
                 status="success", critical_issues=[], warnings=[], suggestions=[]
+            )
+
+        prompt = self._build_prompt(diff_content)
+        exceeds_limit, estimated_tokens, max_tokens = self._check_token_limit(prompt)
+
+        if exceeds_limit:
+            return self._handle_token_limit_exceeded(
+                diff_content, estimated_tokens, max_tokens
             )
 
         max_retries = self.config.get("llm.max_retries", 3)

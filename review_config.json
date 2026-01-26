@@ -5,7 +5,10 @@
     "api_key_env": "LLM_API_KEY",
     "timeout": 30,
     "max_retries": 3,
-    "fallback_model": "anthropic/claude-haiku"
+    "fallback_model": "anthropic/claude-haiku",
+    "max_tokens_per_request": 4096,
+    "token_limit_strategy": "chunk",
+    "chars_per_token": 4
   },
   "prompt": {
     "custom_prompt": null,

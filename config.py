@@ -21,6 +21,9 @@ class ReviewConfig:
             "api_key_env": "LLM_API_KEY",
             "timeout": 30,
             "max_retries": 3,
+            "max_tokens_per_request": 4096,
+            "token_limit_strategy": "chunk",  # "truncate", "chunk", or "skip"
+            "chars_per_token": 4,  # Character-to-token ratio for estimation
         },
         "prompt": {
             "custom_prompt": None,
@@ -160,6 +163,65 @@ class ReviewConfig:
         config_model = self.get("llm.model")
         logger.debug("Using model from config: %s", config_model)
         return config_model
+
+    def get_max_tokens(self) -> int:
+        """Get max tokens per request. Environment variable takes precedence."""
+        env_value = os.getenv("LLM_MAX_TOKENS_PER_REQUEST")
+        if env_value:
+            try:
+                value = int(env_value)
+                logger.debug(
+                    "Using max tokens from LLM_MAX_TOKENS_PER_REQUEST: %d", value
+                )
+                return value
+            except ValueError:
+                logger.warning(
+                    "Invalid LLM_MAX_TOKENS_PER_REQUEST value: %s. Using config.",
+                    env_value,
+                )
+
+        config_value = self.get("llm.max_tokens_per_request", 4096)
+        logger.debug("Using max tokens from config: %d", config_value)
+        return config_value
+
+    def get_token_limit_strategy(self) -> str:
+        """Get token limit strategy. Environment variable takes precedence."""
+        env_value = os.getenv("LLM_TOKEN_LIMIT_STRATEGY")
+        valid_strategies = ("truncate", "chunk", "skip")
+
+        if env_value:
+            if env_value in valid_strategies:
+                logger.debug(
+                    "Using token limit strategy from LLM_TOKEN_LIMIT_STRATEGY: %s",
+                    env_value,
+                )
+                return env_value
+            else:
+                logger.warning(
+                    "Invalid LLM_TOKEN_LIMIT_STRATEGY value: %s. Must be one of %s. Using config.",
+                    env_value,
+                    valid_strategies,
+                )
+
+        config_value = self.get("llm.token_limit_strategy", "chunk")
+        if config_value not in valid_strategies:
+            logger.warning(
+                "Invalid token_limit_strategy in config: %s. Using 'chunk'.",
+                config_value,
+            )
+            return "chunk"
+
+        logger.debug("Using token limit strategy from config: %s", config_value)
+        return config_value
+
+    def get_chars_per_token(self) -> int:
+        """Get character-to-token ratio for estimation."""
+        config_value = self.get("llm.chars_per_token", 4)
+        if config_value < 1:
+            logger.warning("chars_per_token must be >= 1. Using default 4.")
+            return 4
+        logger.debug("Using chars_per_token: %d", config_value)
+        return config_value
 
     def is_file_supported(self, file_path: str) -> bool:
         """Check if file extension is supported for review."""
