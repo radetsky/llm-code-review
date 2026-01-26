@@ -1,0 +1,35 @@
+# Example workflow for using LLM Code Review action
+# Copy this to your repository: .github/workflows/llm-code-review.yml
+
+name: LLM Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  push:
+    branches: [main, develop]
+
+jobs:
+  code-review:
+    name: LLM Code Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for diff
+
+      - name: Run LLM Code Review
+        uses: radetsky/llm-code-review@main
+        with:
+          api_key: ${{ secrets.LLM_API_KEY }}
+          # Optional: override LLM endpoint
+          # base_url: ${{ secrets.LLM_BASE_URL }}
+          # model: ${{ secrets.LLM_MODEL }}
+
+          # Optional: strict mode (fail on warnings too)
+          # strict: 'true'
+
+          # Optional: disable PR comments
+          # post_comment: 'false'
