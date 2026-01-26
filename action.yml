@@ -116,7 +116,7 @@ runs:
         echo "Running: python ${{ github.action_path }}/review.py $ARGS"
 
         set +e
-        python "${{ github.action_path }}/review.py" $ARGS > "$RESULT_FILE" 2>&1
+        python "${{ github.action_path }}/review.py" $ARGS > "$RESULT_FILE"
         EXIT_CODE=$?
         set -e
 
