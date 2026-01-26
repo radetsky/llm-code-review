@@ -19,7 +19,7 @@ class ReviewConfig:
             "model": "gpt-oss:20b",
             "base_url": "https://llm.dev.cossacklabs.com/api",
             "api_key_env": "LLM_API_KEY",
-            "timeout": 30,
+            "timeout": 180,
             "max_retries": 3,
             "max_tokens_per_request": 4096,
             "token_limit_strategy": "chunk",  # "truncate", "chunk", or "skip"
@@ -221,6 +221,23 @@ class ReviewConfig:
             logger.warning("chars_per_token must be >= 1. Using default 4.")
             return 4
         logger.debug("Using chars_per_token: %d", config_value)
+        return config_value
+
+    def get_timeout(self) -> int:
+        """Get LLM request timeout in seconds. Environment variable takes precedence."""
+        env_value = os.getenv("LLM_TIMEOUT")
+        if env_value:
+            try:
+                value = int(env_value)
+                logger.debug("Using timeout from LLM_TIMEOUT: %d", value)
+                return value
+            except ValueError:
+                logger.warning(
+                    "Invalid LLM_TIMEOUT value: %s. Using config.", env_value
+                )
+
+        config_value = self.get("llm.timeout", 180)
+        logger.debug("Using timeout from config: %d", config_value)
         return config_value
 
     def is_file_supported(self, file_path: str) -> bool:

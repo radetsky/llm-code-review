@@ -3,7 +3,7 @@
     "model": "anthropic/claude-sonnet-4",
     "base_url": "https://api.opencode.ai/v1",
     "api_key_env": "LLM_API_KEY",
-    "timeout": 30,
+    "timeout": 180,
     "max_retries": 3
   },
   "prompt": {
