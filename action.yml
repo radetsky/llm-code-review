@@ -189,14 +189,14 @@ runs:
 
             commentText = `## ${statusIcon} LLM Code Review
 
-**Status:** ${statusText}
+            **Status:** ${statusText}
 
-| Category | Count |
-|----------|-------|
-| Critical Issues | ${criticalCount} |
-| Warnings | ${warningCount} |
-| Suggestions | ${suggestionCount} |
-`;
+            | Category | Count |
+            |----------|-------|
+            | Critical Issues | ${criticalCount} |
+            | Warnings | ${warningCount} |
+            | Suggestions | ${suggestionCount} |
+            `;
 
             if (reviewData.critical_issues && reviewData.critical_issues.length > 0) {
               commentText += '\n### Critical Issues\n';
