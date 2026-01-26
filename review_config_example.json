@@ -32,6 +32,13 @@
       "*.spec.js"
     ]
   },
+  "prompt": {
+    "custom_prompt": null,
+    "custom_critical_rules": ["memory leaks", "race conditions"],
+    "custom_warnings": ["deprecated API usage"],
+    "custom_suggestions": ["consider async patterns"],
+    "additional_instructions": "Focus on thread safety"
+  },
   "output": {
     "format": "text",
     "show_context": true,

@@ -1,0 +1,58 @@
+Custom Prompt Template Example
+==============================
+
+When using "custom_prompt" in your review_config.json, you can use
+the following placeholders:
+
+  {diff_content}            - The git diff to review
+  {custom_critical_rules}   - Formatted list of custom critical rules
+  {custom_warnings}         - Formatted list of custom warnings
+  {custom_suggestions}      - Formatted list of custom suggestions
+  {additional_instructions} - Additional instructions text
+
+All placeholders are optional - use only the ones you need.
+
+Example Configuration
+---------------------
+{
+  "prompt": {
+    "custom_prompt": "You are a code reviewer.\n\nCRITICAL:\n{custom_critical_rules}\n\nWARNINGS:\n{custom_warnings}\n\nSUGGESTIONS:\n{custom_suggestions}\n\n{additional_instructions}\n\nReview:\n{diff_content}\n\nRespond with CRITICAL:, WARNING:, or SUGGESTION: prefixes.",
+    "custom_critical_rules": ["memory leaks", "race conditions"],
+    "custom_warnings": ["deprecated API usage"],
+    "custom_suggestions": ["consider async patterns"],
+    "additional_instructions": "Focus on thread safety"
+  }
+}
+
+Minimal Example (diff only)
+---------------------------
+{
+  "prompt": {
+    "custom_prompt": "Review this code for security issues:\n\n{diff_content}\n\nRespond with CRITICAL:, WARNING:, or SUGGESTION: prefixes."
+  }
+}
+
+Full Custom Prompt Template
+---------------------------
+You are a security-focused code reviewer. Analyze the following changes.
+
+CRITICAL ISSUES (block commit):
+{custom_critical_rules}
+
+WARNINGS (allow but flag):
+{custom_warnings}
+
+SUGGESTIONS (improvements):
+{custom_suggestions}
+
+{additional_instructions}
+
+Format your response as:
+CRITICAL: [issue description]
+WARNING: [issue description]
+SUGGESTION: [suggestion]
+
+If no issues found for a category, respond "NONE".
+
+Changes to review:
+{diff_content}

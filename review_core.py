@@ -81,15 +81,7 @@ Focus on security vulnerabilities first, then code quality."""
         if not isinstance(prompt_config, dict):
             prompt_config = {}
 
-        custom_prompt = prompt_config.get("custom_prompt")
-        if custom_prompt and isinstance(custom_prompt, str):
-            try:
-                return custom_prompt.format(diff_content=diff_content)
-            except KeyError as e:
-                self.logger.warning(
-                    f"Custom prompt has invalid placeholder: {e}. Using default."
-                )
-
+        # Build placeholder strings first (needed for both custom and default prompts)
         custom_critical = prompt_config.get("custom_critical_rules") or []
         custom_warnings = prompt_config.get("custom_warnings") or []
         custom_suggestions = prompt_config.get("custom_suggestions") or []
@@ -113,6 +105,22 @@ Focus on security vulnerabilities first, then code quality."""
         suggestions_str = "\n".join(
             f"- {rule}" for rule in custom_suggestions if isinstance(rule, str)
         )
+
+        # Check for custom prompt - pass all placeholders
+        custom_prompt = prompt_config.get("custom_prompt")
+        if custom_prompt and isinstance(custom_prompt, str):
+            try:
+                return custom_prompt.format(
+                    diff_content=diff_content,
+                    custom_critical_rules=critical_str,
+                    custom_warnings=warnings_str,
+                    custom_suggestions=suggestions_str,
+                    additional_instructions=additional,
+                )
+            except KeyError as e:
+                self.logger.warning(
+                    f"Custom prompt has invalid placeholder: {e}. Using default."
+                )
 
         try:
             return self.DEFAULT_PROMPT.format(
