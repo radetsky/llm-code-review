@@ -70,9 +70,10 @@ Changes to review:
 
 Focus on security vulnerabilities first, then code quality."""
 
-    def __init__(self, config):
+    def __init__(self, config, trace: bool = False):
         self.config = config
         self.client = None
+        self.trace = trace
         self._setup_logging()
 
     def _build_prompt(self, diff_content: str) -> str:
@@ -290,6 +291,7 @@ Focus on security vulnerabilities first, then code quality."""
         total_chunks = len(chunks)
 
         self.logger.info(f"Splitting diff into {total_chunks} chunks for review")
+        self._trace_print(f"Chunking: splitting diff into {total_chunks} chunks")
 
         all_critical = []
         all_warnings = []
@@ -299,6 +301,7 @@ Focus on security vulnerabilities first, then code quality."""
 
         for i, chunk in enumerate(chunks):
             self.logger.info(f"Reviewing chunk {i + 1}/{total_chunks}")
+            self._trace_print(f"Chunking: reviewing chunk {i + 1}/{total_chunks}")
             try:
                 result = self._call_llm(chunk)
                 all_critical.extend(result.critical_issues)
@@ -404,12 +407,24 @@ Focus on security vulnerabilities first, then code quality."""
             suggestions=[],
         )
 
+    def _trace_print(self, message: str):
+        """Print trace message to stderr if trace mode is enabled."""
+        if self.trace:
+            import sys
+
+            print(f"[TRACE] {message}", file=sys.stderr)
+
     def _call_llm(self, diff_content: str) -> ReviewResult:
         """Make LLM API call."""
         client = self._get_client()
         model = self.config.get_model()
+        base_url = self.config.get_base_url()
 
         prompt = self._build_prompt(diff_content)
+        prompt_tokens = self._estimate_tokens(prompt)
+
+        self._trace_print(f"LLM Query: model={model}, base_url={base_url}")
+        self._trace_print(f"LLM Query: estimated_tokens={prompt_tokens}")
 
         try:
             response = client.chat.completions.create(
@@ -418,9 +433,13 @@ Focus on security vulnerabilities first, then code quality."""
                 temperature=0.1,  # Low temperature for consistent analysis
             )
         except OpenAIError as e:
+            self._trace_print(f"LLM Query failed: {e}")
             raise e
 
         raw_response = response.choices[0].message.content or ""
+        response_tokens = self._estimate_tokens(raw_response)
+        self._trace_print(f"LLM Response: received ~{response_tokens} tokens")
+
         return self._parse_llm_response(raw_response)
 
     def _parse_llm_response(self, response: str) -> ReviewResult:
@@ -499,6 +518,7 @@ Focus on security vulnerabilities first, then code quality."""
         if fallback_model:
             try:
                 self.logger.info(f"Trying fallback model: {fallback_model}")
+                self._trace_print(f"Fallback: trying fallback model {fallback_model}")
                 original_model = self.config.config["llm"]["model"]
                 self.config.config["llm"]["model"] = fallback_model
 
@@ -522,6 +542,7 @@ Focus on security vulnerabilities first, then code quality."""
         # Use static analysis as final fallback
         if self.config.get("fallback.enable_static_analysis", True):
             self.logger.info("Using static analysis as fallback")
+            self._trace_print("Fallback: using static analysis")
             try:
                 # Direct import for testing
                 import sys
@@ -545,6 +566,9 @@ Focus on security vulnerabilities first, then code quality."""
         try:
             client = self._get_client()
             model = self.config.get_model()
+            base_url = self.config.get_base_url()
+
+            self._trace_print(f"Test connection: model={model}, base_url={base_url}")
 
             # Simple test message
             response = client.chat.completions.create(
@@ -555,10 +579,12 @@ Focus on security vulnerabilities first, then code quality."""
                 max_tokens=10,
             )
 
-            return (
+            success = (
                 response.choices[0].message.content
                 and "OK" in response.choices[0].message.content
             )
+            self._trace_print(f"Test connection: success={success}")
+            return success
         except Exception as e:
             self.logger.error(f"Connection test failed: {e}")
             return False
