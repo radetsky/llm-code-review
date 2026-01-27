@@ -220,6 +220,7 @@ Examples:
         """Format results as JSON."""
         return {
             "status": result.status,
+            "review_outcome": result.review_outcome,
             "critical_issues": result.critical_issues,
             "warnings": result.warnings,
             "suggestions": result.suggestions,
@@ -269,7 +270,11 @@ Examples:
         # Status information
         if verbose:
             lines.append("📊 Status Information:")
-            lines.append(f"   • Review Status: {result.status}")
+            llm_status = "completed" if result.status == "success" else result.status
+            lines.append(f"   • LLM Review: {llm_status}")
+            outcome_icons = {"critical": "🔴", "warnings": "🟡", "success": "🟢"}
+            outcome_icon = outcome_icons.get(result.review_outcome, "")
+            lines.append(f"   • Code Review Outcome: {outcome_icon} {result.review_outcome}")
             if result.fallback_used:
                 lines.append("   • Fallback Analysis: Yes")
             if result.total_chunks > 0:

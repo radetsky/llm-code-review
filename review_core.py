@@ -16,7 +16,7 @@ from openai import OpenAI, OpenAIError
 class ReviewResult:
     """Result of LLM code review."""
 
-    status: str  # "success", "model_unavailable", "error", "skipped"
+    status: str  # "success", "model_unavailable", "error", "skipped" - technical status of LLM operation
     critical_issues: List[str]
     warnings: List[str]
     suggestions: List[str]
@@ -24,6 +24,15 @@ class ReviewResult:
     raw_response: Optional[str] = None
     chunks_reviewed: int = 0
     total_chunks: int = 0
+
+    @property
+    def review_outcome(self) -> str:
+        """Code review outcome based on findings: critical, warnings, or success."""
+        if self.critical_issues:
+            return "critical"
+        elif self.warnings:
+            return "warnings"
+        return "success"
 
 
 class LLMReviewer:
