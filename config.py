@@ -17,7 +17,7 @@ class ReviewConfig:
     DEFAULT_CONFIG = {
         "llm": {
             "model": "gpt-oss:20b",
-            "base_url": "https://llm.dev.cossacklabs.com/api",
+            "base_url": None,
             "api_key_env": "LLM_API_KEY",
             "timeout": 180,
             "max_retries": 3,
@@ -142,7 +142,7 @@ class ReviewConfig:
         logger.warning("API key not found. Set LLM_API_KEY environment variable.")
         return None
 
-    def get_base_url(self) -> str:
+    def get_base_url(self) -> Optional[str]:
         """Get LLM base URL. Environment variable takes precedence over config."""
         env_url = os.getenv("LLM_BASE_URL")
         if env_url:
@@ -150,8 +150,12 @@ class ReviewConfig:
             return env_url
 
         config_url = self.get("llm.base_url")
-        logger.debug("Using base URL from config: %s", config_url)
-        return config_url
+        if config_url:
+            logger.debug("Using base URL from config: %s", config_url)
+            return config_url
+
+        logger.warning("Base URL not found. Set LLM_BASE_URL environment variable.")
+        return None
 
     def get_model(self) -> str:
         """Get LLM model name. Environment variable takes precedence over config."""
