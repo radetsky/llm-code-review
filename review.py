@@ -176,6 +176,14 @@ Examples:
             )
             return False
 
+        # Check base URL
+        if not self.config.get_base_url():
+            print(
+                "Error: Base URL not found. Set LLM_BASE_URL environment variable.",
+                file=sys.stderr,
+            )
+            return False
+
         # Check if in git repository
         try:
             self.parser._run_git(["rev-parse", "--git-dir"])
@@ -274,7 +282,9 @@ Examples:
             lines.append(f"   • LLM Review: {llm_status}")
             outcome_icons = {"critical": "🔴", "warnings": "🟡", "success": "🟢"}
             outcome_icon = outcome_icons.get(result.review_outcome, "")
-            lines.append(f"   • Code Review Outcome: {outcome_icon} {result.review_outcome}")
+            lines.append(
+                f"   • Code Review Outcome: {outcome_icon} {result.review_outcome}"
+            )
             if result.fallback_used:
                 lines.append("   • Fallback Analysis: Yes")
             if result.total_chunks > 0:

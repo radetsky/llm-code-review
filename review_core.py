@@ -470,7 +470,15 @@ Focus on security vulnerabilities first, then code quality."""
             self._trace_print(f"LLM Query failed: {e}")
             raise e
 
-        raw_response = response.choices[0].message.content or ""
+        # Handle non-standard API responses that return string instead of ChatCompletion object
+        if isinstance(response, str):
+            raw_response = response
+        elif hasattr(response, "choices") and response.choices:
+            raw_response = response.choices[0].message.content or ""
+        else:
+            raise ValueError(
+                f"Unexpected response type from LLM API: {type(response).__name__}"
+            )
         response_tokens = self._estimate_tokens(raw_response)
         self._trace_print(f"LLM Response: received ~{response_tokens} tokens")
         self._trace_llm_response(raw_response)
@@ -614,10 +622,15 @@ Focus on security vulnerabilities first, then code quality."""
                 max_tokens=10,
             )
 
-            success = (
-                response.choices[0].message.content
-                and "OK" in response.choices[0].message.content
-            )
+            # Handle non-standard API responses
+            if isinstance(response, str):
+                content = response
+            elif hasattr(response, "choices") and response.choices:
+                content = response.choices[0].message.content or ""
+            else:
+                content = ""
+
+            success = content and "OK" in content
             self._trace_print(f"Test connection: success={success}")
             return success
         except Exception as e:
