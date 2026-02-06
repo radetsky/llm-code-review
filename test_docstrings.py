@@ -30,7 +30,15 @@ def _check(analyzer: StaticAnalyzer, file: str, lines: list[str]) -> list[str]:
 @pytest.fixture()
 def analyzer():
     cfg = MagicMock()
-    cfg.get.return_value = True  # check_docstrings enabled
+
+    def _get(path, default=None):
+        if path == "review.check_docstrings":
+            return True
+        if path == "review.docstring_min_lines":
+            return 0
+        return default
+
+    cfg.get.side_effect = _get
     return StaticAnalyzer(cfg)
 
 
@@ -424,3 +432,130 @@ class TestGeneralEdgeCases:
         )
         assert any("no_docs" in s for s in result)
         assert not any("has_docs" in s for s in result)
+
+
+# ===================================================================
+# G. Minimum body lines threshold (docstring_min_lines)
+# ===================================================================
+
+
+@pytest.fixture()
+def analyzer_min5():
+    """Analyzer with docstring_min_lines=5."""
+    cfg = MagicMock()
+
+    def _get(path, default=None):
+        if path == "review.check_docstrings":
+            return True
+        if path == "review.docstring_min_lines":
+            return 5
+        return default
+
+    cfg.get.side_effect = _get
+    return StaticAnalyzer(cfg)
+
+
+@pytest.fixture()
+def analyzer_min1():
+    """Analyzer with docstring_min_lines=1."""
+    cfg = MagicMock()
+
+    def _get(path, default=None):
+        if path == "review.check_docstrings":
+            return True
+        if path == "review.docstring_min_lines":
+            return 1
+        return default
+
+    cfg.get.side_effect = _get
+    return StaticAnalyzer(cfg)
+
+
+class TestMinLines:
+    def test_python_short_function_no_flag(self, analyzer_min5):
+        """Python function with body < 5 lines should not be flagged."""
+        result = _check(
+            analyzer_min5,
+            "app.py",
+            ["def short():", "    x = 1", "    return x"],
+        )
+        assert not any("short" in s for s in result)
+
+    def test_python_long_function_flagged(self, analyzer_min5):
+        """Python function with body >= 5 lines should be flagged."""
+        result = _check(
+            analyzer_min5,
+            "app.py",
+            [
+                "def long_func():",
+                "    a = 1",
+                "    b = 2",
+                "    c = 3",
+                "    d = 4",
+                "    return a + b + c + d",
+            ],
+        )
+        assert any("long_func" in s for s in result)
+
+    def test_js_short_arrow_no_flag(self, analyzer_min5):
+        """Short JS arrow function should not be flagged."""
+        result = _check(
+            analyzer_min5,
+            "app.js",
+            ["const add = (a, b) => {", "    return a + b;", "}"],
+        )
+        assert not any("add" in s for s in result)
+
+    def test_js_long_function_flagged(self, analyzer_min5):
+        """Long JS function should be flagged."""
+        result = _check(
+            analyzer_min5,
+            "app.js",
+            [
+                "function process(data) {",
+                "    const a = data.a;",
+                "    const b = data.b;",
+                "    const c = a + b;",
+                "    const d = c * 2;",
+                "    return d;",
+                "}",
+            ],
+        )
+        assert any("process" in s for s in result)
+
+    def test_go_short_func_no_flag(self, analyzer_min5):
+        """Short Go function should not be flagged."""
+        result = _check(
+            analyzer_min5,
+            "main.go",
+            ["func add(a, b int) int {", "    return a + b", "}"],
+        )
+        assert not any("add" in s for s in result)
+
+    def test_threshold_zero_always_flags(self, analyzer):
+        """Default threshold 0 means all functions are checked."""
+        result = _check(
+            analyzer,
+            "app.py",
+            ["def tiny():", "    pass"],
+        )
+        assert any("tiny" in s for s in result)
+
+    def test_threshold_one_skips_single_line(self, analyzer_min1):
+        """Threshold 1 should skip functions with 0 body lines but flag those with >= 1."""
+        # Function with no body lines in diff (definition only)
+        result_empty = _check(analyzer_min1, "app.py", ["def empty():"])
+        assert not any("empty" in s for s in result_empty)
+
+        # Function with 1 body line should be flagged
+        result_one = _check(analyzer_min1, "app.py", ["def one_liner():", "    pass"])
+        assert any("one_liner" in s for s in result_one)
+
+    def test_class_short_body_no_flag(self, analyzer_min5):
+        """Class with short body should not be flagged."""
+        result = _check(
+            analyzer_min5,
+            "app.py",
+            ["class Small:", "    x = 1"],
+        )
+        assert not any("Small" in s for s in result)

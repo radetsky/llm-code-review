@@ -48,6 +48,7 @@ class ReviewConfig:
                 "documentation_gaps",
             ],
             "check_docstrings": True,
+            "docstring_min_lines": 0,
             "file_extensions": [
                 ".py",
                 ".js",

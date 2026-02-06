@@ -299,6 +299,45 @@ class StaticAnalyzer:
         canonical = self._EXT_ALIASES.get(ext, ext)
         return self.DOCSTRING_PATTERNS.get(canonical)
 
+    def _count_body_lines(self, lines: List[str], start_index: int, ext: str) -> int:
+        """Count the number of body lines for a definition starting at start_index."""
+        canonical = self._EXT_ALIASES.get(ext, ext)
+
+        if canonical == ".py":
+            # Indentation-based: count subsequent non-blank lines with strictly
+            # greater indentation than the definition line.
+            def_line = lines[start_index]
+            def_indent = len(def_line) - len(def_line.lstrip())
+            count = 0
+            for j in range(start_index + 1, len(lines)):
+                stripped = lines[j].strip()
+                if not stripped:
+                    continue
+                line_indent = len(lines[j]) - len(lines[j].lstrip())
+                if line_indent <= def_indent:
+                    break
+                count += 1
+            return count
+        else:
+            # Brace languages: track { } depth.
+            depth = 0
+            started = False
+            count = 0
+            for j in range(start_index, len(lines)):
+                line = lines[j]
+                for ch in line:
+                    if ch == "{":
+                        depth += 1
+                        started = True
+                    elif ch == "}":
+                        depth -= 1
+                if started and j > start_index:
+                    if lines[j].strip():
+                        count += 1
+                if started and depth <= 0:
+                    break
+            return count
+
     def _check_docstrings(self, added_lines: List[Dict[str, str]]) -> List[str]:
         """Check added lines for functions/classes missing docstrings."""
         suggestions = []
@@ -353,6 +392,11 @@ class StaticAnalyzer:
                         break
 
                 if not has_docstring:
+                    min_lines = self.config.get("review.docstring_min_lines", 0)
+                    if min_lines > 0:
+                        body_lines = self._count_body_lines(lines, i, ext)
+                        if body_lines < min_lines:
+                            continue
                     suggestions.append(f"{file_path}: Missing docstring for '{name}'")
 
         return suggestions
