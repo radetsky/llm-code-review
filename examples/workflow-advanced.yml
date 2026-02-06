@@ -40,6 +40,9 @@ jobs:
           # Fail action if critical issues found (default: true)
           fail_on_critical: 'true'
 
+          # Post inline comments on specific code lines (default: true)
+          inline_comments: 'true'
+
       - name: Review Summary
         if: always()
         run: |
