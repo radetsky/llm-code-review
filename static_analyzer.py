@@ -20,33 +20,47 @@ class StaticAnalyzer:
         },
         ".js": {
             "definition": re.compile(
-                r"^\s*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|class\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\(|=>))"
+                r"^\s*(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:"
+                r"function\s+(\w+)"
+                r"|class\s+(\w+)"
+                r"|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:function\s*[\s(]|\([^)]*\)\s*=>|[a-zA-Z_$]\w*\s*=>)"
+                r"|(?!if|else|for|while|switch|catch|do|return|throw|new|typeof|instanceof|void|delete|await|yield)(\w+)\s*\([^)]*\)\s*\{"
+                r")"
             ),
             "docstring": re.compile(r"^\s*/\*\*"),
             "position": "before",
         },
         ".java": {
             "definition": re.compile(
-                r"^\s*(?:public|private|protected|static|final|abstract|\s)*(?:class|interface|void|int|String|boolean|long|double|float|char|byte|short|[A-Z]\w*)\s+(\w+)\s*[\(<{]"
+                r"^\s*(?:public|private|protected|static|final|abstract|synchronized|default|strictfp|\s)*"
+                r"(?:<[^>]+>\s*)?"
+                r"(?:class|interface|enum|record|@interface|void|int|String|boolean|long|double|float|char|byte|short|[A-Z]\w*)"
+                r"(?:\s*\[\])*"
+                r"\s+(\w+)\s*[\(<{]"
             ),
             "docstring": re.compile(r"^\s*/\*\*"),
             "position": "before",
         },
         ".c": {
             "definition": re.compile(
-                r"^\s*(?:static\s+)?(?:inline\s+)?(?:const\s+)?(?:unsigned\s+)?(?:void|int|char|float|double|long|short|struct\s+\w+|enum\s+\w+|\w+_t)\s+\*?\s*(\w+)\s*\("
+                r"^\s*(?:(?:static|inline|const|volatile|extern|unsigned|signed|virtual|explicit)\s+)*"
+                r"(?:void|bool|int|char|float|double|long|short|size_t|ssize_t|struct\s+\w+|enum\s+\w+|union\s+\w+|class\s+\w+|\w+_t|\w+::\w+)"
+                r"(?:\s*\*+|\s*&+|\s+)*"
+                r"\s*(\w+)\s*\("
             ),
             "docstring": re.compile(r"^\s*(?:/\*\*|///)"),
             "position": "before",
         },
         ".go": {
-            "definition": re.compile(r"^\s*func\s+(?:\(\w+\s+\*?\w+\)\s+)?(\w+)\s*\("),
+            "definition": re.compile(
+                r"^\s*func\s+(?:\(\s*\w+\s+\*?[\w.]+\)\s+)?(\w+)\s*(?:\[[^\]]*\])?\s*\("
+            ),
             "docstring": re.compile(r"^\s*//"),
             "position": "before",
         },
         ".rs": {
             "definition": re.compile(
-                r"^\s*(?:pub(?:\(crate\))?\s+)?(?:async\s+)?(?:fn|struct|enum|trait|impl)\s+(\w+)"
+                r"^\s*(?:pub\s*(?:\([^)]*\)\s*)?)?(?:(?:async|unsafe|const|default)\s+)*(?:extern\s+\"[^\"]*\"\s+)?(?:fn|struct|enum|trait|impl|type|mod)\s+(\w+)"
             ),
             "docstring": re.compile(r"^\s*///"),
             "position": "before",

@@ -6,3 +6,4 @@ python-dotenv==1.0.0
 rich==13.7.1
 argparse
 json5==0.9.14
+pytest>=7.0
