@@ -219,55 +219,89 @@ For large diffs that exceed LLM token limits, the system automatically splits th
 - Missing error handling
 - *Plus your custom warnings*
 
-## GitHub Actions
+## GitHub Actions Setup Guide
 
-Use the LLM Code Review action in your workflows:
+Use the LLM Code Review as a GitHub Action to automatically review pull requests.
 
-### Basic Usage
+### Step 1: Add Secrets to Your Repository
+
+Go to your repository **Settings → Secrets and variables → Actions** and add:
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `LLM_API_KEY` | Yes | Your LLM provider API key |
+| `LLM_BASE_URL` | No | API endpoint URL (see provider table below) |
+| `LLM_MODEL` | No | Model name (see provider table below) |
+
+**Provider-specific values:**
+
+| Provider | `LLM_API_KEY` | `LLM_BASE_URL` | `LLM_MODEL` |
+|----------|---------------|-----------------|--------------|
+| OpenAI | `sk-...` | `https://api.openai.com/v1` | `gpt-4` |
+| Anthropic (OpenRouter) | OpenRouter key | `https://openrouter.ai/api/v1` | `anthropic/claude-sonnet-4` |
+| Anthropic (OpenCode) | OpenCode key | `https://api.opencode.ai/v1` | `anthropic/claude-sonnet-4` |
+| Local / self-hosted | any non-empty string | `http://your-server:port/v1` | your model name |
+
+### Step 2: Create Workflow File
+
+Create `.github/workflows/llm-code-review.yml` in your repository:
 
 ```yaml
-# .github/workflows/code-review.yml
-name: Code Review
+name: LLM Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  review:
+  code-review:
+    name: AI Code Review
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: radetsky/llm-code-review@v1
+      - name: Run LLM Code Review
+        uses: radetsky/llm-code-review@main
         with:
           api_key: ${{ secrets.LLM_API_KEY }}
+          base_url: ${{ secrets.LLM_BASE_URL }}
+          model: ${{ secrets.LLM_MODEL }}
 ```
 
-### Advanced Usage
+**What this does:**
+- Triggers on every pull request (open, update, reopen)
+- Checks out full git history (`fetch-depth: 0`) for diff analysis
+- Runs LLM code review and posts results as a PR comment
+
+### Step 3: Advanced Configuration
+
+Add optional inputs to customize behavior:
 
 ```yaml
-      - uses: radetsky/llm-code-review@v1
+      - name: Run LLM Code Review
         id: review
+        uses: radetsky/llm-code-review@main
         with:
           api_key: ${{ secrets.LLM_API_KEY }}
-          base_url: ${{ secrets.LLM_BASE_URL }}  # Optional
-          model: ${{ secrets.LLM_MODEL }}        # Optional
-          strict: 'false'                        # Fail on warnings too
-          post_comment: 'true'                   # Post PR comment
-          fail_on_critical: 'true'               # Fail if critical issues
+          base_url: ${{ secrets.LLM_BASE_URL }}
+          model: ${{ secrets.LLM_MODEL }}
+          strict: 'true'              # Fail on warnings too (default: false)
+          post_comment: 'true'         # Post review as PR comment (default: true)
+          fail_on_critical: 'true'     # Fail action on critical issues (default: true)
 
       - name: Check results
+        if: always()
         run: |
           echo "Status: ${{ steps.review.outputs.status }}"
           echo "Critical: ${{ steps.review.outputs.critical_count }}"
           echo "Warnings: ${{ steps.review.outputs.warning_count }}"
+          echo "Suggestions: ${{ steps.review.outputs.suggestion_count }}"
 ```
 
 ### Action Inputs
@@ -324,7 +358,7 @@ llm-code-review/
 │   ├── workflow-basic.yml        # Basic GitHub Actions workflow
 │   └── workflow-advanced.yml     # Advanced workflow with all options
 └── .github/workflows/
-    └── llm-review.yml            # This repo's CI workflow
+    └── llm_code_review.yml       # Self-test workflow (uses local action)
 ```
 
 ## License

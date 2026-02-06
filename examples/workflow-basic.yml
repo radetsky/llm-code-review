@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run LLM Code Review
-        uses: radetsky/llm-code-review@v1
+        uses: radetsky/llm-code-review@main
         with:
           api_key: ${{ secrets.LLM_API_KEY }}
           base_url: ${{ secrets.LLM_BASE_URL }}
