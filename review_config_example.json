@@ -22,6 +22,8 @@
       "missing_error_handling",
       "documentation_gaps"
     ],
+    "check_docstrings": true,
+    "docstring_min_lines": 0,
     "file_extensions": [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h", ".go"],
     "exclude_patterns": [
       "node_modules/",
