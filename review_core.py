@@ -38,46 +38,41 @@ class ReviewResult:
 class LLMReviewer:
     """Handles LLM interactions for code review."""
 
-    DEFAULT_PROMPT = """You are a security-focused code reviewer. Analyze the following git diff changes for:
+    DEFAULT_PROMPT = """You are a strict, security-focused code reviewer. Analyze ONLY the added/changed lines in the git diff below.
+
+Rules:
+- Report ONLY issues you can see in the actual diff. Do NOT give generic advice.
+- Each issue MUST reference a specific file and line, using format: file.py:42: description
+- If no issues found, respond "NONE" for that category.
+- Be concise. Do not repeat yourself.
 
 CRITICAL ISSUES (block commit):
 - Hardcoded credentials, API keys, secrets
 - SQL injection, XSS vulnerabilities
 - Unsafe functions (eval(), exec(), system())
-- Direct file system operations without validation
-- Network requests to external endpoints without proper validation
-- Buffer overflow risks
 - Command injection vulnerabilities
+- Buffer overflow risks
 {custom_critical_rules}
 
 WARNINGS (allow commit but flag):
-- Code style violations
-- Potential bugs and edge cases
-- Performance issues
-- Missing error handling
-- Input validation gaps
-- Documentation gaps
+- Actual bugs or logic errors visible in the diff
+- Missing error handling for operations that can fail
+- Security-relevant input validation gaps
 {custom_warnings}
 
-SUGGESTIONS (improvements):
-- Best practices recommendations
-- Code organization improvements
-- Security enhancements
+SUGGESTIONS (only if clearly beneficial):
+- Concrete improvements to the changed code
 {custom_suggestions}
 
 {additional_instructions}
 
-Format your response as:
-CRITICAL: [issue description]
-WARNING: [issue description]
-SUGGESTION: [suggestion]
-
-If no issues found for a category, respond "NONE".
+Format:
+CRITICAL: file.py:42: issue description
+WARNING: file.py:15: issue description
+SUGGESTION: file.py:30: suggestion
 
 Changes to review:
-{diff_content}
-
-Focus on security vulnerabilities first, then code quality."""
+{diff_content}"""
 
     def __init__(self, config, trace: bool = False, trace_llm: bool = False):
         self.config = config

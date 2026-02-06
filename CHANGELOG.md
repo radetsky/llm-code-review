@@ -6,6 +6,10 @@
 - Inline PR review comments: GitHub Action now posts review comments directly on
   specific code lines (file:line format) via Pull Request Review API, in addition
   to the existing summary comment. Controlled by `inline_comments` input (default: true).
+
+### Changed
+- Tightened LLM prompt to reduce noise: requires file:line references, prohibits
+  generic advice, reports only issues visible in the actual diff.
 - `--offline` CLI flag: run static analysis only, without any LLM calls. No API key
   or network connection required. Automatically forces `check_docstrings: True`.
   Mutually exclusive with `--test-connection`. Useful for quick local checks,
