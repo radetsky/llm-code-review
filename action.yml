@@ -37,6 +37,10 @@ inputs:
     description: 'Fail the action if critical issues found (default: true)'
     required: false
     default: 'true'
+  inline_comments:
+    description: 'Post inline review comments on specific code lines (default: true)'
+    required: false
+    default: 'true'
 
 outputs:
   status:
@@ -260,6 +264,104 @@ runs:
             }
           } catch (error) {
             console.error('Error managing PR comment:', error);
+          }
+
+    - name: Post Inline Review Comments
+      if: inputs.inline_comments == 'true' && inputs.post_comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+
+          let reviewData = {};
+          try {
+            const resultFile = '${{ steps.review.outputs.result_file }}';
+            const reviewResult = fs.readFileSync(resultFile, 'utf8');
+            reviewData = JSON.parse(reviewResult);
+          } catch (error) {
+            console.log('Could not read review results for inline comments:', error.message);
+            return;
+          }
+
+          const linePattern = /^(.+?):(\d+):\s*(.+)$/;
+          const comments = [];
+
+          const categories = [
+            { key: 'critical_issues', icon: '🚨' },
+            { key: 'warnings', icon: '⚠️' },
+            { key: 'suggestions', icon: '💡' },
+          ];
+
+          for (const { key, icon } of categories) {
+            const issues = reviewData[key] || [];
+            for (const issue of issues) {
+              const match = issue.match(linePattern);
+              if (match) {
+                comments.push({
+                  path: match[1],
+                  line: parseInt(match[2], 10),
+                  body: `${icon} ${match[3]}`,
+                });
+              }
+            }
+          }
+
+          if (comments.length === 0) {
+            console.log('No inline comments to post (no issues with file:line format)');
+            return;
+          }
+
+          const commitId = '${{ github.event.pull_request.head.sha }}';
+          const prNumber = context.issue.number;
+          const owner = context.repo.owner;
+          const repo = context.repo.repo;
+
+          // Post individual inline comments
+          let posted = 0;
+          let skipped = 0;
+
+          for (const comment of comments) {
+            try {
+              await github.rest.pulls.createReviewComment({
+                owner,
+                repo,
+                pull_number: prNumber,
+                commit_id: commitId,
+                path: comment.path,
+                line: comment.line,
+                body: comment.body,
+              });
+              posted++;
+            } catch (err) {
+              skipped++;
+              console.log(`Skipped comment on ${comment.path}:${comment.line} - ${err.message}`);
+            }
+          }
+
+          console.log(`Inline comments: ${posted} posted, ${skipped} skipped`);
+
+          // Create a review to mark the PR as reviewed
+          try {
+            const criticalCount = ${{ steps.review.outputs.critical_count }};
+            const warningCount = ${{ steps.review.outputs.warning_count }};
+            const event = criticalCount > 0 ? 'REQUEST_CHANGES' : 'COMMENT';
+            const body = criticalCount > 0
+              ? `LLM Code Review found ${criticalCount} critical issue(s) and ${warningCount} warning(s).`
+              : warningCount > 0
+                ? `LLM Code Review found ${warningCount} warning(s).`
+                : 'LLM Code Review passed.';
+
+            await github.rest.pulls.createReview({
+              owner,
+              repo,
+              pull_number: prNumber,
+              commit_id: commitId,
+              event: event,
+              body: body,
+            });
+            console.log(`Created review with event: ${event}`);
+          } catch (reviewError) {
+            console.log('Failed to create review:', reviewError.message);
           }
 
     - name: Check for failures

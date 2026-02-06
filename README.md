@@ -296,6 +296,7 @@ Add optional inputs to customize behavior:
           strict: 'true'              # Fail on warnings too (default: false)
           post_comment: 'true'         # Post review as PR comment (default: true)
           fail_on_critical: 'true'     # Fail action on critical issues (default: true)
+          inline_comments: 'true'      # Post inline comments on code lines (default: true)
 
       - name: Check results
         if: always()
@@ -316,6 +317,7 @@ Add optional inputs to customize behavior:
 | `strict` | Fail on warnings | No | `false` |
 | `post_comment` | Post PR comment | No | `true` |
 | `fail_on_critical` | Fail on critical issues | No | `true` |
+| `inline_comments` | Post inline review comments on code lines | No | `true` |
 
 ### Action Outputs
 
