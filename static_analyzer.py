@@ -10,6 +10,58 @@ from typing import List, Dict, Any
 class StaticAnalyzer:
     """Static code analysis for basic security checks."""
 
+    # Patterns for detecting function/class definitions and their docstrings
+    # Each entry: (definition_regex, docstring_opener_regex, name_group_index)
+    DOCSTRING_PATTERNS = {
+        ".py": {
+            "definition": re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+(\w+)"),
+            "docstring": re.compile(r'^\s*(?:"""|\'\'\'|r"""|r\'\'\')'),
+            "position": "after",
+        },
+        ".js": {
+            "definition": re.compile(
+                r"^\s*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|class\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\(|=>))"
+            ),
+            "docstring": re.compile(r"^\s*/\*\*"),
+            "position": "before",
+        },
+        ".java": {
+            "definition": re.compile(
+                r"^\s*(?:public|private|protected|static|final|abstract|\s)*(?:class|interface|void|int|String|boolean|long|double|float|char|byte|short|[A-Z]\w*)\s+(\w+)\s*[\(<{]"
+            ),
+            "docstring": re.compile(r"^\s*/\*\*"),
+            "position": "before",
+        },
+        ".c": {
+            "definition": re.compile(
+                r"^\s*(?:static\s+)?(?:inline\s+)?(?:const\s+)?(?:unsigned\s+)?(?:void|int|char|float|double|long|short|struct\s+\w+|enum\s+\w+|\w+_t)\s+\*?\s*(\w+)\s*\("
+            ),
+            "docstring": re.compile(r"^\s*(?:/\*\*|///)"),
+            "position": "before",
+        },
+        ".go": {
+            "definition": re.compile(r"^\s*func\s+(?:\(\w+\s+\*?\w+\)\s+)?(\w+)\s*\("),
+            "docstring": re.compile(r"^\s*//"),
+            "position": "before",
+        },
+        ".rs": {
+            "definition": re.compile(
+                r"^\s*(?:pub(?:\(crate\))?\s+)?(?:async\s+)?(?:fn|struct|enum|trait|impl)\s+(\w+)"
+            ),
+            "docstring": re.compile(r"^\s*///"),
+            "position": "before",
+        },
+    }
+
+    # Extension aliases mapping to canonical patterns
+    _EXT_ALIASES = {
+        ".ts": ".js",
+        ".jsx": ".js",
+        ".tsx": ".js",
+        ".cpp": ".c",
+        ".h": ".c",
+    }
+
     def __init__(self, config):
         self.config = config
 
@@ -48,6 +100,10 @@ class StaticAnalyzer:
 
             # Suggestions
             suggestions.extend(self._suggest_improvements(line, file_path))
+
+        # Docstring checks
+        if self.config.get("review.check_docstrings", True):
+            suggestions.extend(self._check_docstrings(added_lines))
 
         return ReviewResult(
             status="success",
@@ -221,5 +277,68 @@ class StaticAnalyzer:
             suggestions.append(
                 f"{file_path}: Add input validation when using user input"
             )
+
+        return suggestions
+
+    def _get_docstring_patterns(self, ext: str) -> dict | None:
+        """Get docstring patterns for a file extension, resolving aliases."""
+        canonical = self._EXT_ALIASES.get(ext, ext)
+        return self.DOCSTRING_PATTERNS.get(canonical)
+
+    def _check_docstrings(self, added_lines: List[Dict[str, str]]) -> List[str]:
+        """Check added lines for functions/classes missing docstrings."""
+        suggestions = []
+
+        # Group added lines by file, preserving order
+        files: Dict[str, List[str]] = {}
+        for line_info in added_lines:
+            fp = line_info["file"]
+            if fp not in files:
+                files[fp] = []
+            files[fp].append(line_info["content"])
+
+        for file_path, lines in files.items():
+            # Determine file extension
+            ext = ""
+            dot_idx = file_path.rfind(".")
+            if dot_idx != -1:
+                ext = file_path[dot_idx:]
+
+            patterns = self._get_docstring_patterns(ext)
+            if not patterns:
+                continue
+
+            def_re = patterns["definition"]
+            doc_re = patterns["docstring"]
+            position = patterns.get("position", "after")
+
+            for i, line in enumerate(lines):
+                match = def_re.match(line)
+                if not match:
+                    continue
+
+                # Extract function/class name from first non-None group
+                name = next((g for g in match.groups() if g is not None), "unknown")
+
+                has_docstring = False
+                if position == "after":
+                    # Python: docstring on the line(s) after the definition
+                    for j in range(i + 1, min(i + 3, len(lines))):
+                        if not lines[j].strip():
+                            continue
+                        if doc_re.match(lines[j]):
+                            has_docstring = True
+                        break
+                else:
+                    # Other languages: doc comment on the line(s) before the definition
+                    for j in range(i - 1, max(i - 4, -1), -1):
+                        if not lines[j].strip():
+                            continue
+                        if doc_re.match(lines[j]):
+                            has_docstring = True
+                        break
+
+                if not has_docstring:
+                    suggestions.append(f"{file_path}: Missing docstring for '{name}'")
 
         return suggestions

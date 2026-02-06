@@ -107,6 +107,15 @@ Focus on security vulnerabilities first, then code quality."""
         if not isinstance(additional, str):
             additional = ""
 
+        if self.config.get("review.check_docstrings", True):
+            docstring_rule = (
+                "Flag missing docstrings/documentation comments on functions, methods, "
+                "and classes (especially large ones). Suggest language-appropriate format: "
+                "Python docstrings, JSDoc, Javadoc, Doxygen, or godoc"
+            )
+            if docstring_rule not in custom_suggestions:
+                custom_suggestions.append(docstring_rule)
+
         critical_str = "\n".join(
             f"- {rule}" for rule in custom_critical if isinstance(rule, str)
         )

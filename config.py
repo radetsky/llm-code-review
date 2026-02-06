@@ -47,6 +47,7 @@ class ReviewConfig:
                 "missing_error_handling",
                 "documentation_gaps",
             ],
+            "check_docstrings": True,
             "file_extensions": [
                 ".py",
                 ".js",
