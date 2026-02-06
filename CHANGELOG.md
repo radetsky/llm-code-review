@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- `--offline` CLI flag: run static analysis only, without any LLM calls. No API key
+  or network connection required. Automatically forces `check_docstrings: True`.
+  Mutually exclusive with `--test-connection`. Useful for quick local checks,
+  CI environments without API access, or when no internet is available.
 - Docstrings suggestions feature: detects functions, methods, and classes missing
   documentation comments in added code. Supports Python docstrings, JSDoc (JS/TS/JSX/TSX),
   Javadoc, Doxygen (C/C++), godoc (Go), and Rust doc comments. Works in both static analysis fallback

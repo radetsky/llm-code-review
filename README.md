@@ -9,6 +9,7 @@ Automated code review powered by LLM. Works with any OpenAI-compatible API (Open
 - **Multiple modes** - CLI, Git hooks, GitHub Actions
 - **Flexible** - Works with any OpenAI-compatible endpoint
 - **Graceful fallback** - Static analysis when LLM unavailable
+- **Offline mode** - Run static analysis only, without LLM calls (`--offline`)
 
 ## Quick Start
 
@@ -99,6 +100,7 @@ llm-code-review --base main --head dev # Compare branches
 llm-code-review --format json          # JSON output for CI/CD
 llm-code-review --strict               # Block on warnings too
 llm-code-review --verbose              # Detailed output
+llm-code-review --offline              # Static analysis only (no API key needed)
 llm-code-review --test-connection      # Test API connectivity
 ```
 
@@ -335,6 +337,9 @@ llm-code-review --test-connection
 
 # Verbose output
 llm-code-review --mode staged --verbose
+
+# Offline static analysis (no API key needed)
+llm-code-review --mode staged --offline
 
 # Health check
 python monitor.py health

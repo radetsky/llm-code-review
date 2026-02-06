@@ -93,15 +93,17 @@ class StaticAnalyzer:
         for line_info in added_lines:
             line = line_info["content"]
             file_path = line_info["file"]
+            line_num = line_info.get("line", 0)
+            file_ref = f"{file_path}:{line_num}" if line_num else file_path
 
             # Security checks - convert to warnings for static analysis
             # In static analysis mode, we treat everything as warnings to avoid blocking commits
             # when LLM is unavailable
             critical_from_static = []
-            critical_from_static.extend(self._check_credentials(line, file_path))
-            critical_from_static.extend(self._check_sql_injection(line, file_path))
-            critical_from_static.extend(self._check_unsafe_functions(line, file_path))
-            critical_from_static.extend(self._check_file_operations(line, file_path))
+            critical_from_static.extend(self._check_credentials(line, file_ref))
+            critical_from_static.extend(self._check_sql_injection(line, file_ref))
+            critical_from_static.extend(self._check_unsafe_functions(line, file_ref))
+            critical_from_static.extend(self._check_file_operations(line, file_ref))
 
             # Convert critical issues to warnings for static analysis fallback
             warnings.extend(
@@ -109,11 +111,11 @@ class StaticAnalyzer:
             )
 
             # Code quality checks
-            warnings.extend(self._check_hardcoded_urls(line, file_path))
-            warnings.extend(self._check_debug_code(line, file_path))
+            warnings.extend(self._check_hardcoded_urls(line, file_ref))
+            warnings.extend(self._check_debug_code(line, file_ref))
 
             # Suggestions
-            suggestions.extend(self._suggest_improvements(line, file_path))
+            suggestions.extend(self._suggest_improvements(line, file_ref))
 
         # Docstring checks
         if self.config.get("review.check_docstrings", True):
@@ -128,9 +130,10 @@ class StaticAnalyzer:
         )
 
     def _extract_added_lines(self, diff_content: str) -> List[Dict[str, str]]:
-        """Extract added lines from diff with file context."""
+        """Extract added lines from diff with file context and line numbers."""
         lines = []
         current_file = "unknown"
+        current_line = 0
 
         for line in diff_content.split("\n"):
             if line.startswith("+++"):
@@ -138,13 +141,23 @@ class StaticAnalyzer:
                 match = re.search(r"b/(.+)$", line)
                 if match:
                     current_file = match.group(1)
+            elif line.startswith("@@"):
+                # Parse hunk header for new file line number
+                match = re.search(r"\+(\d+)", line)
+                if match:
+                    current_line = int(match.group(1))
             elif line.startswith("+") and not line.startswith("+++"):
                 lines.append(
                     {
                         "content": line[1:],  # Remove '+' prefix
                         "file": current_file,
+                        "line": current_line,
                     }
                 )
+                current_line += 1
+            elif not line.startswith("-"):
+                # Context line — increment new file line counter
+                current_line += 1
 
         return lines
 
@@ -249,21 +262,57 @@ class StaticAnalyzer:
 
         return warnings
 
+    # Language-specific debug patterns.
+    # print() is legitimate UI output in Python CLIs, so only flag
+    # Python-specific debugger calls. For JS/TS, console.log is debug.
+    _DEBUG_PATTERNS_BY_EXT = {
+        ".py": [
+            (r"breakpoint\s*\(", "breakpoint()"),
+            (r"pdb\.set_trace", "pdb.set_trace()"),
+            (r"import\s+pdb", "import pdb"),
+            (r"import\s+ipdb", "import ipdb"),
+            (r"ic\s*\(", "ic()"),
+        ],
+        ".js": [
+            (r"console\.log\s*\(", "console.log()"),
+            (r"console\.debug\s*\(", "console.debug()"),
+            (r"debugger", "debugger"),
+        ],
+        ".java": [
+            (r"System\.out\.print", "System.out.print"),
+            (r"\.printStackTrace\s*\(", "printStackTrace()"),
+        ],
+        ".c": [
+            (r"printf\s*\(", "printf()"),
+            (r"fprintf\s*\(\s*stderr", "fprintf(stderr)"),
+        ],
+        ".go": [
+            (r"fmt\.Print", "fmt.Print"),
+            (r"log\.Print", "log.Print"),
+        ],
+        ".rs": [
+            (r"dbg!\s*\(", "dbg!()"),
+            (r"println!\s*\(", "println!()"),
+        ],
+    }
+
     def _check_debug_code(self, line: str, file_path: str) -> List[str]:
         """Check for debug code that shouldn't be in production."""
         warnings = []
 
-        debug_patterns = [
-            r"print\s*\(",
-            r"console\.log\s*\(",
-            r"debugger",
-            r"pdb\.set_trace",
-            r"import\s+pdb",
-        ]
+        # Extract extension from file_path (which may include :line suffix)
+        path_part = file_path.split(":")[0]
+        ext = ""
+        dot_idx = path_part.rfind(".")
+        if dot_idx != -1:
+            ext = path_part[dot_idx:]
 
-        for pattern in debug_patterns:
+        canonical = self._EXT_ALIASES.get(ext, ext)
+        patterns = self._DEBUG_PATTERNS_BY_EXT.get(canonical, [])
+
+        for pattern, name in patterns:
             if re.search(pattern, line):
-                warnings.append(f"{file_path}: Debug code detected")
+                warnings.append(f"{file_path}: Debug code detected: {name}")
                 break
 
         return warnings

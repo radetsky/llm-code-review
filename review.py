@@ -49,6 +49,14 @@ class ReviewCLI:
         self.reviewer.trace = self.trace
         self.reviewer.trace_llm = self.trace_llm
 
+        # Handle mutually exclusive --offline and --test-connection
+        if parsed_args.offline and parsed_args.test_connection:
+            print(
+                "Error: --offline and --test-connection are mutually exclusive.",
+                file=sys.stderr,
+            )
+            return 4
+
         # Handle test-connection before validation
         if parsed_args.test_connection:
             if not self._validate_config():
@@ -61,8 +69,14 @@ class ReviewCLI:
                 print("❌ Connection to LLM failed")
                 return 1
 
-        # Validate configuration for other commands
-        if not self._validate_config():
+        # Validate configuration
+        if parsed_args.offline:
+            try:
+                self.parser._run_git(["rev-parse", "--git-dir"])
+            except RuntimeError:
+                print("Error: Not in a git repository.", file=sys.stderr)
+                return 4
+        elif not self._validate_config():
             return 4  # Configuration error
 
         # Validate argument combinations
@@ -82,11 +96,12 @@ class ReviewCLI:
             return 2
 
         try:
-            # Get diff content
-            diff_content = self._get_diff_content(parsed_args)
-
             # Perform review
-            result = self.reviewer.review_diff(diff_content)
+            if parsed_args.offline:
+                result = self._run_offline_review(parsed_args)
+            else:
+                diff_content = self._get_diff_content(parsed_args)
+                result = self.reviewer.review_diff(diff_content)
 
             # Output results
             self._output_results(result, parsed_args)
@@ -109,6 +124,7 @@ Examples:
   python review.py --mode unstaged --format json     # Review unstaged in JSON
   python review.py --mode all --strict               # Review all with strict mode
   python review.py --base main --head feature        # Review between branches
+  python review.py --mode staged --offline           # Offline static analysis only
             """,
         )
 
@@ -153,6 +169,11 @@ Examples:
             "--trace-llm",
             action="store_true",
             help="Dump full LLM prompts and responses to stderr",
+        )
+        parser.add_argument(
+            "--offline",
+            action="store_true",
+            help="Run static analysis only, without LLM (forces docstring checks)",
         )
 
         # Utility commands
@@ -294,6 +315,38 @@ Examples:
             lines.append("")
 
         return "\n".join(lines)
+
+    def _run_offline_review(self, args) -> ReviewResult:
+        """Run static analysis only, without LLM. Forces docstring checks."""
+        from static_analyzer import StaticAnalyzer
+
+        # Get raw git diff (StaticAnalyzer expects raw format with +++ headers)
+        if args.base and args.head:
+            raw_diff = self.parser.get_diff("range", args.base, args.head)
+        elif args.mode:
+            raw_diff = self.parser.get_diff(args.mode)
+        else:
+            raw_diff = self.parser.get_diff("staged")
+
+        if args.verbose:
+            parsed_files = self.parser.parse_diff(raw_diff)
+            if parsed_files:
+                print(f"Analyzing {len(parsed_files)} file(s):", file=sys.stderr)
+                for file_data in parsed_files:
+                    print(
+                        f"  - {file_data['path']} ({file_data['type']})",
+                        file=sys.stderr,
+                    )
+                print("", file=sys.stderr)
+
+        original_value = self.config.get("review.check_docstrings", True)
+        self.config.config.setdefault("review", {})["check_docstrings"] = True
+
+        analyzer = StaticAnalyzer(self.config)
+        result = analyzer.analyze_diff(raw_diff)
+
+        self.config.config["review"]["check_docstrings"] = original_value
+        return result
 
     def _get_exit_code(self, result: ReviewResult, args=None) -> int:
         """Get appropriate exit code based on results."""
