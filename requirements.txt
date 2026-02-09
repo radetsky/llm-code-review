@@ -4,6 +4,6 @@ httpx==0.28.1
 anyio==4.12.1
 python-dotenv==1.0.0
 rich==13.7.1
-argparse
+argparse==1.4.0
 json5==0.9.14
 pytest>=7.0
