@@ -1,0 +1,3 @@
+# Minimal dependencies for GitHub Action runtime
+# Transitive deps (httpx, anyio, etc.) are installed automatically by openai
+openai>=2.0.0
