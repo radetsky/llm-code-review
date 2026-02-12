@@ -43,6 +43,9 @@ jobs:
           # Post inline comments on specific code lines (default: true)
           inline_comments: 'true'
 
+          # Enable inline code change suggestions (default: true)
+          code_suggestions: 'true'
+
       - name: Review Summary
         if: always()
         run: |

@@ -3,13 +3,27 @@ Core LLM integration for code review system.
 Based on existing hello_llm.py structure.
 """
 
+import re
 import time
 import random
 import logging
 from typing import List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from openai import OpenAI, OpenAIError
+
+CODE_SUGGESTION_RE = re.compile(r"^(.+?):(\d+)(?:-(\d+))?:\s*(.+)$")
+
+
+@dataclass
+class CodeSuggestion:
+    """Concrete code replacement suggestion."""
+
+    file: str
+    line_start: int
+    line_end: int
+    description: str
+    suggested_code: str
 
 
 @dataclass
@@ -24,6 +38,7 @@ class ReviewResult:
     raw_response: Optional[str] = None
     chunks_reviewed: int = 0
     total_chunks: int = 0
+    code_suggestions: List[CodeSuggestion] = field(default_factory=list)
 
     @property
     def review_outcome(self) -> str:
@@ -70,7 +85,7 @@ Format:
 CRITICAL: file.py:42: issue description
 WARNING: file.py:15: issue description
 SUGGESTION: file.py:30: suggestion
-
+{code_suggestion_format}
 Changes to review:
 {diff_content}"""
 
@@ -121,6 +136,28 @@ Changes to review:
             f"- {rule}" for rule in custom_suggestions if isinstance(rule, str)
         )
 
+        # Build code suggestion format instructions
+        if self.config.get_code_suggestions_enabled():
+            code_suggestion_format = """
+For suggestions with concrete code fixes, use this format:
+SUGGESTION: file.py:42: description
+```suggestion
+replacement code here
+```
+
+For multi-line replacements, specify line range:
+SUGGESTION: file.py:42-45: description
+```suggestion
+replacement code
+```
+
+Rules for code suggestions:
+- Only suggest when you have an exact, working replacement
+- Keep indentation matching the original code
+- Regular SUGGESTION without code block is still fine for general advice"""
+        else:
+            code_suggestion_format = ""
+
         # Check for custom prompt - pass all placeholders
         custom_prompt = prompt_config.get("custom_prompt")
         if custom_prompt and isinstance(custom_prompt, str):
@@ -131,6 +168,7 @@ Changes to review:
                     custom_warnings=warnings_str,
                     custom_suggestions=suggestions_str,
                     additional_instructions=additional,
+                    code_suggestion_format=code_suggestion_format,
                 )
             except KeyError as e:
                 self.logger.warning(
@@ -144,6 +182,7 @@ Changes to review:
                 custom_warnings=warnings_str,
                 custom_suggestions=suggestions_str,
                 additional_instructions=additional,
+                code_suggestion_format=code_suggestion_format,
             )
         except KeyError as e:
             self.logger.error(f"Prompt template error: {e}. Using minimal prompt.")
@@ -310,6 +349,7 @@ Changes to review:
         all_critical = []
         all_warnings = []
         all_suggestions = []
+        all_code_suggestions = []
         chunks_reviewed = 0
         raw_responses = []
 
@@ -321,6 +361,7 @@ Changes to review:
                 all_critical.extend(result.critical_issues)
                 all_warnings.extend(result.warnings)
                 all_suggestions.extend(result.suggestions)
+                all_code_suggestions.extend(result.code_suggestions)
                 chunks_reviewed += 1
                 if result.raw_response:
                     raw_responses.append(
@@ -346,6 +387,7 @@ Changes to review:
             raw_response="\n\n".join(raw_responses) if raw_responses else None,
             chunks_reviewed=chunks_reviewed,
             total_chunks=total_chunks,
+            code_suggestions=all_code_suggestions,
         )
 
     def _setup_logging(self):
@@ -490,27 +532,89 @@ Changes to review:
         return self._parse_llm_response(raw_response)
 
     def _parse_llm_response(self, response: str) -> ReviewResult:
-        """Parse LLM response into structured result."""
+        """Parse LLM response into structured result.
+
+        Handles both plain SUGGESTION: lines and SUGGESTION: lines followed
+        by ```suggestion code blocks (GitHub-native code change suggestions).
+        """
         critical_issues = []
         warnings = []
         suggestions = []
+        code_suggestions = []
 
         lines = response.strip().split("\n")
+        i = 0
 
-        for line in lines:
-            line = line.strip()
+        while i < len(lines):
+            line = lines[i].strip()
+
             if line.startswith("CRITICAL:"):
                 issue = line[9:].strip()
                 if issue and issue != "NONE":
                     critical_issues.append(issue)
+                i += 1
+
             elif line.startswith("WARNING:"):
                 warning = line[8:].strip()
                 if warning and warning != "NONE":
                     warnings.append(warning)
+                i += 1
+
             elif line.startswith("SUGGESTION:"):
-                suggestion = line[11:].strip()
-                if suggestion and suggestion != "NONE":
-                    suggestions.append(suggestion)
+                suggestion_text = line[11:].strip()
+                if not suggestion_text or suggestion_text == "NONE":
+                    i += 1
+                    continue
+
+                # Peek ahead for ```suggestion block
+                next_i = i + 1
+                if next_i < len(lines) and lines[next_i].strip().startswith(
+                    "```suggestion"
+                ):
+                    # Try to parse as code suggestion
+                    match = CODE_SUGGESTION_RE.match(suggestion_text)
+                    if match:
+                        file_path = match.group(1)
+                        line_start = int(match.group(2))
+                        line_end = int(match.group(3)) if match.group(3) else line_start
+                        description = match.group(4)
+
+                        # Collect code lines until closing ```
+                        code_lines = []
+                        j = next_i + 1
+                        block_closed = False
+                        while j < len(lines):
+                            if lines[j].strip() == "```":
+                                block_closed = True
+                                break
+                            code_lines.append(lines[j])
+                            j += 1
+
+                        if block_closed:
+                            code_suggestions.append(
+                                CodeSuggestion(
+                                    file=file_path,
+                                    line_start=line_start,
+                                    line_end=line_end,
+                                    description=description,
+                                    suggested_code="\n".join(code_lines),
+                                )
+                            )
+                            i = j + 1
+                        else:
+                            # Unclosed block — fallback to plain suggestion
+                            suggestions.append(suggestion_text)
+                            i += 1
+                    else:
+                        # No file:line match — treat as plain suggestion
+                        suggestions.append(suggestion_text)
+                        i += 1
+                else:
+                    # No ```suggestion block — plain suggestion
+                    suggestions.append(suggestion_text)
+                    i += 1
+            else:
+                i += 1
 
         return ReviewResult(
             status="success",
@@ -518,6 +622,7 @@ Changes to review:
             warnings=warnings,
             suggestions=suggestions,
             raw_response=response,
+            code_suggestions=code_suggestions,
         )
 
     def _is_retryable_error(self, error: OpenAIError) -> bool:
