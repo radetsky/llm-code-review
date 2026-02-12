@@ -139,7 +139,8 @@ Changes to review:
         # Build code suggestion format instructions
         if self.config.get_code_suggestions_enabled():
             code_suggestion_format = """
-For suggestions with concrete code fixes, use this format:
+IMPORTANT: When a SUGGESTION references a specific file and line, you MUST include a code block with the exact replacement. Use this format:
+
 SUGGESTION: file.py:42: description
 ```suggestion
 replacement code here
@@ -152,9 +153,9 @@ replacement code
 ```
 
 Rules for code suggestions:
-- Only suggest when you have an exact, working replacement
+- Every SUGGESTION with file:line MUST have a ```suggestion block with exact replacement code
 - Keep indentation matching the original code
-- Regular SUGGESTION without code block is still fine for general advice"""
+- Only omit the code block for general advice without a specific file:line reference"""
         else:
             code_suggestion_format = ""
 
