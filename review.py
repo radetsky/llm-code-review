@@ -253,6 +253,16 @@ Examples:
             "critical_issues": result.critical_issues,
             "warnings": result.warnings,
             "suggestions": result.suggestions,
+            "code_suggestions": [
+                {
+                    "file": cs.file,
+                    "line_start": cs.line_start,
+                    "line_end": cs.line_end,
+                    "description": cs.description,
+                    "suggested_code": cs.suggested_code,
+                }
+                for cs in result.code_suggestions
+            ],
             "fallback_used": result.fallback_used,
             "exit_code": self._get_exit_code(result),
         }
@@ -295,6 +305,19 @@ Examples:
             for suggestion in result.suggestions:
                 lines.append(f"   • {suggestion}")
             lines.append("")
+
+        # Code suggestions
+        if result.code_suggestions:
+            lines.append("🔧 CODE SUGGESTIONS:")
+            for cs in result.code_suggestions:
+                if cs.line_end != cs.line_start:
+                    loc = f"{cs.file}:{cs.line_start}-{cs.line_end}"
+                else:
+                    loc = f"{cs.file}:{cs.line_start}"
+                lines.append(f"   {loc}: {cs.description}")
+                for code_line in cs.suggested_code.split("\n"):
+                    lines.append(f"     {code_line}")
+                lines.append("")
 
         # Status information
         if verbose:

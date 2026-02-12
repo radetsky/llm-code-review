@@ -116,6 +116,7 @@ Edit `review_config.json` to customize rules, or use environment variables:
 | `LLM_TIMEOUT` | Request timeout in seconds (default: 180) | No |
 | `LLM_MAX_TOKENS_PER_REQUEST` | Max tokens per review chunk (default: 4096) | No |
 | `LLM_TOKEN_LIMIT_STRATEGY` | Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`) | No |
+| `LLM_CODE_SUGGESTIONS` | Enable inline code change suggestions: `true` or `false` (default: `false`) | No |
 
 ### Custom Review Rules
 
@@ -297,6 +298,7 @@ Add optional inputs to customize behavior:
           post_comment: 'true'         # Post review as PR comment (default: true)
           fail_on_critical: 'true'     # Fail action on critical issues (default: true)
           inline_comments: 'true'      # Post inline comments on code lines (default: true)
+          code_suggestions: 'true'    # Enable code change suggestions (default: true)
 
       - name: Check results
         if: always()
@@ -318,6 +320,7 @@ Add optional inputs to customize behavior:
 | `post_comment` | Post PR comment | No | `true` |
 | `fail_on_critical` | Fail on critical issues | No | `true` |
 | `inline_comments` | Post inline review comments on code lines | No | `true` |
+| `code_suggestions` | Enable inline code change suggestions | No | `true` |
 
 ### Action Outputs
 

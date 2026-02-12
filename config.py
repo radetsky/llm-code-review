@@ -47,6 +47,7 @@ class ReviewConfig:
                 "missing_error_handling",
                 "documentation_gaps",
             ],
+            "enable_code_suggestions": False,
             "check_docstrings": True,
             "docstring_min_lines": 0,
             "file_extensions": [
@@ -219,6 +220,13 @@ class ReviewConfig:
 
         logger.debug("Using token limit strategy from config: %s", config_value)
         return config_value
+
+    def get_code_suggestions_enabled(self) -> bool:
+        """Check if code suggestions are enabled. Environment variable takes precedence."""
+        env_value = os.getenv("LLM_CODE_SUGGESTIONS")
+        if env_value is not None:
+            return env_value.lower() in ("true", "1", "yes")
+        return bool(self.get("review.enable_code_suggestions", False))
 
     def get_chars_per_token(self) -> int:
         """Get character-to-token ratio for estimation."""

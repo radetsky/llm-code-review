@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- Inline code change suggestions: LLM can now generate concrete code replacements
+  using GitHub-native `suggestion` blocks. In GitHub Actions, these render as
+  "Apply suggestion" buttons. Controlled by `code_suggestions` action input
+  (default: true) and `review.enable_code_suggestions` config / `LLM_CODE_SUGGESTIONS`
+  env var. CLI displays suggestions in both text and JSON output formats.
 - Inline PR review comments: GitHub Action now posts review comments directly on
   specific code lines (file:line format) via Pull Request Review API, in addition
   to the existing summary comment. Controlled by `inline_comments` input (default: true).

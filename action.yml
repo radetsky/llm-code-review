@@ -41,6 +41,10 @@ inputs:
     description: 'Post inline review comments on specific code lines (default: true)'
     required: false
     default: 'true'
+  code_suggestions:
+    description: 'Enable inline code change suggestions (default: true)'
+    required: false
+    default: 'true'
 
 outputs:
   status:
@@ -102,6 +106,7 @@ runs:
         LLM_API_KEY: ${{ inputs.api_key }}
         LLM_BASE_URL: ${{ inputs.base_url }}
         LLM_MODEL: ${{ inputs.model }}
+        LLM_CODE_SUGGESTIONS: ${{ inputs.code_suggestions }}
       run: |
         RESULT_FILE="${{ runner.temp }}/llm-review-result.json"
 
@@ -304,6 +309,21 @@ runs:
                 });
               }
             }
+          }
+
+          // Code suggestions with GitHub-native suggestion blocks
+          const codeSuggestions = reviewData.code_suggestions || [];
+          for (const cs of codeSuggestions) {
+            const body = `💡 ${cs.description}\n\n\`\`\`suggestion\n${cs.suggested_code}\n\`\`\``;
+            const comment = {
+              path: cs.file,
+              line: cs.line_end,
+              body: body,
+            };
+            if (cs.line_start !== cs.line_end) {
+              comment.start_line = cs.line_start;
+            }
+            comments.push(comment);
           }
 
           if (comments.length === 0) {
