@@ -61,6 +61,9 @@ Rules:
 - Added lines in the diff are prefixed with their line number (e.g., "+ 42: code"). Use these exact numbers when referencing issues.
 - If no issues found, respond "NONE" for that category.
 - Be concise. Do not repeat yourself.
+- Before reporting a bug or logic error, carefully trace the COMPLETE control flow — check all branches, shared statements after if/elif/else blocks, and surrounding context. Do NOT report issues based on partial reading of the code.
+- NEVER reference line numbers or code that is not present in the diff below. Every file:line you cite must correspond to actual content in the diff.
+- Do NOT speculate about how code might be called or what data structures might look like outside the diff. Only report issues visible in the provided code.
 
 CRITICAL ISSUES (block commit):
 - Hardcoded credentials, API keys, secrets
