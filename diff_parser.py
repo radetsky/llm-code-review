@@ -56,6 +56,7 @@ class DiffParser:
         files = []
         current_file = None
         current_hunk = None
+        new_line_num = 0
 
         lines = diff_text.split("\n")
         i = 0
@@ -108,6 +109,8 @@ class DiffParser:
                     new_start = int(match.group(3))
                     new_count = int(match.group(4) or 1)
 
+                    new_line_num = new_start
+
                     current_hunk = {
                         "old_start": old_start,
                         "old_count": old_count,
@@ -130,12 +133,16 @@ class DiffParser:
                         current_hunk["context_before"].append(line[1:])
                     elif current_hunk["added_lines"] or current_hunk["removed_lines"]:
                         current_hunk["context_after"].append(line[1:])
+                    new_line_num += 1
                 elif line.startswith("-"):
-                    # Removed line
+                    # Removed line (do not increment new_line_num)
                     current_hunk["removed_lines"].append(line[1:])
                 elif line.startswith("+"):
-                    # Added line
-                    current_hunk["added_lines"].append(line[1:])
+                    # Added line with line number
+                    current_hunk["added_lines"].append(
+                        {"line": new_line_num, "content": line[1:]}
+                    )
+                    new_line_num += 1
 
             i += 1
 
@@ -196,9 +203,11 @@ class DiffParser:
                     for line in hunk["removed_lines"]:
                         formatted_sections.append(f"- {line}")
 
-                    # Show added lines
-                    for line in hunk["added_lines"]:
-                        formatted_sections.append(f"+ {line}")
+                    # Show added lines with line numbers
+                    for entry in hunk["added_lines"]:
+                        formatted_sections.append(
+                            f"+ {entry['line']}: {entry['content']}"
+                        )
 
                     formatted_sections.append("")  # Empty line for readability
 

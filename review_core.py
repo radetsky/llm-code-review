@@ -58,6 +58,7 @@ class LLMReviewer:
 Rules:
 - Report ONLY issues you can see in the actual diff. Do NOT give generic advice.
 - Each issue MUST reference a specific file and line, using format: file.py:42: description
+- Added lines in the diff are prefixed with their line number (e.g., "+ 42: code"). Use these exact numbers when referencing issues.
 - If no issues found, respond "NONE" for that category.
 - Be concise. Do not repeat yourself.
 
@@ -155,7 +156,8 @@ replacement code
 Rules for code suggestions:
 - Every SUGGESTION with file:line MUST have a ```suggestion block with exact replacement code
 - Keep indentation matching the original code
-- Only omit the code block for general advice without a specific file:line reference"""
+- Only omit the code block for general advice without a specific file:line reference
+- Line numbers prefixed on added lines (e.g., "+ 42: code") are metadata only. Do NOT include them in suggested code."""
         else:
             code_suggestion_format = ""
 
