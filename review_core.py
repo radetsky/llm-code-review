@@ -62,6 +62,7 @@ Rules:
 - If no issues found, respond "NONE" for that category.
 - Be concise. Do not repeat yourself.
 - Before reporting a bug or logic error, carefully trace the COMPLETE control flow — check all branches, shared statements after if/elif/else blocks, and surrounding context. Do NOT report issues based on partial reading of the code.
+- The diff includes {context_lines} lines of context around each changed hunk. If a construct (try/except block, multiline function call, class definition) is not fully visible in the provided context, assume it is correctly handled outside the visible area. Do NOT flag incomplete patterns unless you can see the problem directly.
 - NEVER reference line numbers or code that is not present in the diff below. Every file:line you cite must correspond to actual content in the diff.
 - Do NOT speculate about how code might be called or what data structures might look like outside the diff. Only report issues visible in the provided code.
 
@@ -164,6 +165,8 @@ Rules for code suggestions:
         else:
             code_suggestion_format = ""
 
+        context_lines = self.config.get("output.max_context_lines", 10)
+
         # Check for custom prompt - pass all placeholders
         custom_prompt = prompt_config.get("custom_prompt")
         if custom_prompt and isinstance(custom_prompt, str):
@@ -175,6 +178,7 @@ Rules for code suggestions:
                     custom_suggestions=suggestions_str,
                     additional_instructions=additional,
                     code_suggestion_format=code_suggestion_format,
+                    context_lines=context_lines,
                 )
             except KeyError as e:
                 self.logger.warning(
@@ -189,6 +193,7 @@ Rules for code suggestions:
                 custom_suggestions=suggestions_str,
                 additional_instructions=additional,
                 code_suggestion_format=code_suggestion_format,
+                context_lines=context_lines,
             )
         except KeyError as e:
             self.logger.error(f"Prompt template error: {e}. Using minimal prompt.")

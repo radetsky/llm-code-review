@@ -10,6 +10,16 @@ Automated code review powered by LLM. Works with any OpenAI-compatible API (Open
 - **Flexible** - Works with any OpenAI-compatible endpoint
 - **Graceful fallback** - Static analysis when LLM unavailable
 - **Offline mode** - Run static analysis only, without LLM calls (`--offline`)
+- **YAML support** - Reviews GitHub Actions, docker-compose, and other YAML files
+- **Accurate line numbers** - All diff lines (context, removed, added) carry explicit line numbers,
+  eliminating hallucinated file:line references in LLM output
+
+## Supported File Types
+
+Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++, Go, YAML (`.yml`, `.yaml`)
+
+> YAML support covers GitHub Actions workflows, docker-compose files, Kubernetes manifests,
+> and other infrastructure-as-code files. Configure `review.file_extensions` to add or remove types.
 
 ## Quick Start
 
@@ -101,6 +111,7 @@ llm-code-review --format json          # JSON output for CI/CD
 llm-code-review --strict               # Block on warnings too
 llm-code-review --verbose              # Detailed output
 llm-code-review --offline              # Static analysis only (no API key needed)
+llm-code-review --context 15           # Use 15 context lines around each change (default: 10)
 llm-code-review --test-connection      # Test API connectivity
 ```
 
@@ -114,7 +125,7 @@ Edit `review_config.json` to customize rules, or use environment variables:
 | `LLM_BASE_URL` | API endpoint URL | No (uses config) |
 | `LLM_MODEL` | Model name | No (uses config) |
 | `LLM_TIMEOUT` | Request timeout in seconds (default: 180) | No |
-| `LLM_MAX_TOKENS_PER_REQUEST` | Max tokens per review chunk (default: 4096) | No |
+| `LLM_MAX_TOKENS_PER_REQUEST` | Max tokens per review chunk (default: 8192) | No |
 | `LLM_TOKEN_LIMIT_STRATEGY` | Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`) | No |
 | `LLM_CODE_SUGGESTIONS` | Enable inline code change suggestions: `true` or `false` (default: `false`) | No |
 
@@ -169,6 +180,7 @@ For full control over the review prompt, use `custom_prompt` with placeholders:
 - `{custom_warnings}` - Formatted list of custom warnings
 - `{custom_suggestions}` - Formatted list of custom suggestions
 - `{additional_instructions}` - Additional instructions text
+- `{context_lines}` - Number of context lines shown around each change (from config)
 
 All placeholders are optional - use only the ones you need. See `custom_prompt_example.txt` for more examples.
 
@@ -179,7 +191,7 @@ For large diffs that exceed LLM token limits, the system automatically splits th
 ```json
 {
   "llm": {
-    "max_tokens_per_request": 4096,
+    "max_tokens_per_request": 8192,
     "token_limit_strategy": "chunk",
     "chars_per_token": 4
   }
@@ -187,9 +199,27 @@ For large diffs that exceed LLM token limits, the system automatically splits th
 ```
 
 **Options:**
-- `max_tokens_per_request` - Maximum tokens per LLM request (default: 4096)
+- `max_tokens_per_request` - Maximum tokens per LLM request (default: 8192)
 - `token_limit_strategy` - Strategy for large diffs: `"chunk"` (split and review parts) or `"truncate"` (review only the beginning)
 - `chars_per_token` - Character to token ratio for estimation (default: 4)
+
+### Context Lines
+
+Control how many surrounding lines of code are shown alongside each change. More context helps the LLM understand multi-line patterns (try/except blocks, long function calls):
+
+```json
+{
+  "output": {
+    "max_context_lines": 10
+  }
+}
+```
+
+Or override per-run with the CLI flag:
+
+```bash
+llm-code-review --mode staged --context 20
+```
 
 ### Example Configs
 
@@ -321,6 +351,7 @@ Add optional inputs to customize behavior:
 | `fail_on_critical` | Fail on critical issues | No | `true` |
 | `inline_comments` | Post inline review comments on code lines | No | `true` |
 | `code_suggestions` | Enable inline code change suggestions | No | `true` |
+| `context` | Number of context lines around each change | No | `10` |
 
 ### Action Outputs
 

@@ -176,6 +176,14 @@ Examples:
             help="Run static analysis only, without LLM (forces docstring checks)",
         )
 
+        # Context lines for diff
+        parser.add_argument(
+            "--context",
+            type=int,
+            metavar="N",
+            help="Number of context lines around each change (default: 10)",
+        )
+
         # Utility commands
         parser.add_argument(
             "--test-connection", action="store_true", help="Test connection to LLM API"
@@ -216,6 +224,9 @@ Examples:
 
     def _get_diff_content(self, args) -> str:
         """Get diff content based on arguments."""
+        if getattr(args, "context", None) is not None:
+            self.config.config["output"]["max_context_lines"] = args.context
+
         if args.base and args.head:
             diff_text = self.parser.get_diff("range", args.base, args.head)
         elif args.mode:
