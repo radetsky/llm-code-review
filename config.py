@@ -21,7 +21,7 @@ class ReviewConfig:
             "api_key_env": "LLM_API_KEY",
             "timeout": 180,
             "max_retries": 3,
-            "max_tokens_per_request": 4096,
+            "max_tokens_per_request": 8192,
             "token_limit_strategy": "chunk",  # "truncate", "chunk", or "skip"
             "chars_per_token": 4,  # Character-to-token ratio for estimation
         },
@@ -62,6 +62,8 @@ class ReviewConfig:
                 ".h",
                 ".rs",
                 ".go",
+                ".yml",
+                ".yaml",
             ],
             "exclude_patterns": [
                 "node_modules/",
@@ -72,7 +74,7 @@ class ReviewConfig:
                 "*.spec.js",
             ],
         },
-        "output": {"format": "text", "show_context": True, "max_context_lines": 3},
+        "output": {"format": "text", "show_context": True, "max_context_lines": 10},
         "fallback": {
             "enable_static_analysis": True,
             "allow_commit_on_unavailable": True,

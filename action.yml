@@ -45,6 +45,9 @@ inputs:
     description: 'Enable inline code change suggestions (default: true)'
     required: false
     default: 'true'
+  context:
+    description: 'Number of context lines around each change (default: 10)'
+    required: false
 
 outputs:
   status:
@@ -120,6 +123,15 @@ runs:
 
         if [ "${{ inputs.strict }}" == "true" ]; then
           ARGS="$ARGS --strict"
+        fi
+
+        if [ -n "${{ inputs.context }}" ]; then
+          CONTEXT_VAL="${{ inputs.context }}"
+          if [[ "$CONTEXT_VAL" =~ ^[0-9]+$ ]]; then
+            ARGS="$ARGS --context $CONTEXT_VAL"
+          else
+            echo "Warning: invalid context value '$CONTEXT_VAL', must be a positive integer. Ignoring."
+          fi
         fi
 
         echo "Running: python ${{ github.action_path }}/review.py $ARGS"

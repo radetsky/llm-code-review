@@ -6,7 +6,7 @@
     "timeout": 180,
     "max_retries": 3,
     "fallback_model": "anthropic/claude-haiku",
-    "max_tokens_per_request": 4096,
+    "max_tokens_per_request": 8192,
     "token_limit_strategy": "chunk",
     "chars_per_token": 4
   },
@@ -35,7 +35,7 @@
     "enable_code_suggestions": false,
     "check_docstrings": true,
     "docstring_min_lines": 0,
-    "file_extensions": [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h", ".go"],
+    "file_extensions": [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cpp", ".c", ".h", ".go", ".yml", ".yaml"],
     "exclude_patterns": [
       "node_modules/",
       ".git/",
@@ -48,7 +48,7 @@
   "output": {
     "format": "text",
     "show_context": true,
-    "max_context_lines": 3
+    "max_context_lines": 10
   },
   "fallback": {
     "enable_static_analysis": true,
