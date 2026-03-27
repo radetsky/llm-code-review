@@ -32,8 +32,8 @@ jobs:
         uses: radetsky/llm-code-review@main
         with:
           api_key: ${{ secrets.LLM_API_KEY }}
-          base_url: ${{ secrets.LLM_BASE_URL }}
-          model: ${{ secrets.LLM_MODEL }}
+          base_url: ${{ vars.LLM_BASE_URL }}
+          model: ${{ vars.LLM_MODEL }}
           # Reduce if your LLM provider has a lower token limit (default: 32768)
           # max_tokens: '16384'
           # Increase if your LLM provider is slow (default: 180s)

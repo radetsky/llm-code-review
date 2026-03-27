@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Rust (`.rs`), Ruby (`.rb`), C# (`.cs`), PHP (`.php`), Kotlin (`.kt`), Swift (`.swift`), Shell (`.sh`), and SQL (`.sql`) added to the default list of reviewed file extensions in `review_config.json`, `review_config_example.json`, and `DEFAULT_CONFIG`.
+
 ## [0.1.4] - 2026-03-27
 
 ### Added

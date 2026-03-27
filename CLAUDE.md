@@ -12,7 +12,7 @@ LLM-powered code review system with three integration modes:
 Uses OpenAI-compatible LLM API (configurable model and endpoint).
 
 ### Supported Languages
-Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++, Go
+Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++, Go, Rust, Ruby, C#, PHP, Kotlin, Swift, Shell, SQL
 
 ## Common Commands
 
