@@ -3,6 +3,20 @@
 ## [Unreleased]
 
 ### Added
+- `max_tokens` input in GitHub Action to override max tokens per LLM request per workflow run.
+- `timeout` input in GitHub Action to override LLM request timeout per workflow run.
+- `LLM_MAX_RESPONSE_TOKENS` environment variable to control max tokens in LLM response (default: 16384).
+- `llm.max_response_tokens` config key (default: 16384).
+
+### Changed
+- Default `llm.timeout` increased from 180 to 600 seconds to accommodate slow providers and large diffs with chunking.
+- Default `max_tokens_per_request` increased to 32768 (see v0.1.3 notes).
+- LLM requests now use `system` + `user` message roles instead of a single `user` message, giving reviewer instructions higher priority in the model's context window.
+- `max_tokens` is now explicitly passed in every LLM API call, preventing unbounded response generation.
+
+## [0.1.3] - 2026-03-27
+
+### Added
 - `--context N` CLI flag to override the number of diff context lines per run (e.g. `--context 20`).
 - `context` input in GitHub Action to override context lines per workflow run.
 - `output.max_context_lines` config key (default: 10) to control how many surrounding lines are
@@ -27,8 +41,9 @@
 ### Changed
 - Default `output.max_context_lines` increased from 3 to 10 to reduce false positives caused by
   partially visible try/except blocks and multiline function calls.
-- Default `max_tokens_per_request` increased from 4096 to 8192 to handle larger diffs that result
-  from wider context windows.
+- Default `max_tokens_per_request` increased from 4096 to 32768 to handle large PRs without
+  chunking on modern LLMs with wide context windows (e.g. Claude Sonnet 4 supports 200K tokens).
+  Override with `LLM_MAX_TOKENS_PER_REQUEST` environment variable if a lower limit is needed.
 - Prompt now explicitly tells the LLM how many context lines are included and instructs it not to
   flag constructs (try/except, multiline calls, class definitions) that extend beyond the visible area.
 - Tightened LLM prompt to reduce noise: requires file:line references, prohibits generic advice,

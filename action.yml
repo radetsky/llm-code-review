@@ -45,6 +45,12 @@ inputs:
     description: 'Enable inline code change suggestions (default: true)'
     required: false
     default: 'true'
+  max_tokens:
+    description: 'Max tokens per LLM request (default: 32768). Reduce if your provider has a lower limit.'
+    required: false
+  timeout:
+    description: 'LLM request timeout in seconds (default: 600). Increase for slow providers or large diffs.'
+    required: false
   context:
     description: 'Number of context lines around each change (default: 10)'
     required: false
@@ -110,6 +116,8 @@ runs:
         LLM_BASE_URL: ${{ inputs.base_url }}
         LLM_MODEL: ${{ inputs.model }}
         LLM_CODE_SUGGESTIONS: ${{ inputs.code_suggestions }}
+        LLM_MAX_TOKENS_PER_REQUEST: ${{ inputs.max_tokens }}
+        LLM_TIMEOUT: ${{ inputs.timeout }}
       run: |
         RESULT_FILE="${{ runner.temp }}/llm-review-result.json"
 

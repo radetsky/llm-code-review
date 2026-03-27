@@ -46,6 +46,14 @@ jobs:
           # Enable inline code change suggestions (default: true)
           code_suggestions: 'true'
 
+          # Max tokens per LLM request (default: 32768 — covers most PRs in a single request)
+          # Reduce this value if your LLM provider has a lower token limit per request
+          # max_tokens: '32768'
+
+          # LLM request timeout in seconds (default: 600)
+          # Increase for slow providers or when reviewing large diffs with chunking
+          # timeout: '300'
+
       - name: Review Summary
         if: always()
         run: |

@@ -124,8 +124,9 @@ Edit `review_config.json` to customize rules, or use environment variables:
 | `LLM_API_KEY` | API key for LLM service | Yes |
 | `LLM_BASE_URL` | API endpoint URL | No (uses config) |
 | `LLM_MODEL` | Model name | No (uses config) |
-| `LLM_TIMEOUT` | Request timeout in seconds (default: 180) | No |
-| `LLM_MAX_TOKENS_PER_REQUEST` | Max tokens per review chunk (default: 8192) | No |
+| `LLM_TIMEOUT` | Request timeout in seconds (default: 600) | No |
+| `LLM_MAX_TOKENS_PER_REQUEST` | Max input tokens per review chunk (default: 32768) | No |
+| `LLM_MAX_RESPONSE_TOKENS` | Max tokens in LLM response (default: 16384) | No |
 | `LLM_TOKEN_LIMIT_STRATEGY` | Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`) | No |
 | `LLM_CODE_SUGGESTIONS` | Enable inline code change suggestions: `true` or `false` (default: `false`) | No |
 
@@ -191,7 +192,7 @@ For large diffs that exceed LLM token limits, the system automatically splits th
 ```json
 {
   "llm": {
-    "max_tokens_per_request": 8192,
+    "max_tokens_per_request": 32768,
     "token_limit_strategy": "chunk",
     "chars_per_token": 4
   }
@@ -199,7 +200,7 @@ For large diffs that exceed LLM token limits, the system automatically splits th
 ```
 
 **Options:**
-- `max_tokens_per_request` - Maximum tokens per LLM request (default: 8192)
+- `max_tokens_per_request` - Maximum tokens per LLM request (default: 32768)
 - `token_limit_strategy` - Strategy for large diffs: `"chunk"` (split and review parts) or `"truncate"` (review only the beginning)
 - `chars_per_token` - Character to token ratio for estimation (default: 4)
 
@@ -329,6 +330,8 @@ Add optional inputs to customize behavior:
           fail_on_critical: 'true'     # Fail action on critical issues (default: true)
           inline_comments: 'true'      # Post inline comments on code lines (default: true)
           code_suggestions: 'true'    # Enable code change suggestions (default: true)
+          # max_tokens: '32768'       # Max tokens per LLM request (default: 32768)
+          # timeout: '600'            # LLM request timeout in seconds (default: 600)
 
       - name: Check results
         if: always()
@@ -351,6 +354,8 @@ Add optional inputs to customize behavior:
 | `fail_on_critical` | Fail on critical issues | No | `true` |
 | `inline_comments` | Post inline review comments on code lines | No | `true` |
 | `code_suggestions` | Enable inline code change suggestions | No | `true` |
+| `max_tokens` | Max tokens per LLM request | No | `32768` |
+| `timeout` | LLM request timeout in seconds | No | `600` |
 | `context` | Number of context lines around each change | No | `10` |
 
 ### Action Outputs
