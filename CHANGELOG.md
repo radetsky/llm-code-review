@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-03-27
+
 ### Added
 - `max_tokens` input in GitHub Action to override max tokens per LLM request per workflow run.
 - `timeout` input in GitHub Action to override LLM request timeout per workflow run.
