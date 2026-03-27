@@ -33,3 +33,6 @@ jobs:
 
           # Optional: disable PR comments
           # post_comment: 'false'
+
+          # Optional: reduce token limit if your LLM provider requires it (default: 32768)
+          # max_tokens: '16384'

@@ -3,10 +3,10 @@
     "model": "anthropic/claude-sonnet-4",
     "base_url": "https://api.opencode.ai/v1",
     "api_key_env": "LLM_API_KEY",
-    "timeout": 180,
+    "timeout": 600,
     "max_retries": 3,
     "fallback_model": "anthropic/claude-haiku",
-    "max_tokens_per_request": 8192,
+    "max_tokens_per_request": 32768,
     "token_limit_strategy": "chunk",
     "chars_per_token": 4
   },

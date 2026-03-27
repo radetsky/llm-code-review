@@ -53,46 +53,49 @@ class ReviewResult:
 class LLMReviewer:
     """Handles LLM interactions for code review."""
 
-    DEFAULT_PROMPT = """You are a strict, security-focused code reviewer. Analyze ONLY the added/changed lines in the git diff below.
-
-Rules:
-- Report ONLY issues you can see in the actual diff. Do NOT give generic advice.
-- Each issue MUST reference a specific file and line, using format: file.py:42: description
-- Added lines in the diff are prefixed with their line number (e.g., "+ 42: code"). Use these exact numbers when referencing issues.
-- If no issues found, respond "NONE" for that category.
-- Be concise. Do not repeat yourself.
-- Before reporting a bug or logic error, carefully trace the COMPLETE control flow — check all branches, shared statements after if/elif/else blocks, and surrounding context. Do NOT report issues based on partial reading of the code.
-- The diff includes {context_lines} lines of context around each changed hunk. If a construct (try/except block, multiline function call, class definition) is not fully visible in the provided context, assume it is correctly handled outside the visible area. Do NOT flag incomplete patterns unless you can see the problem directly.
-- NEVER reference line numbers or code that is not present in the diff below. Every file:line you cite must correspond to actual content in the diff.
-- Do NOT speculate about how code might be called or what data structures might look like outside the diff. Only report issues visible in the provided code.
-
-CRITICAL ISSUES (block commit):
-- Hardcoded credentials, API keys, secrets
-- SQL injection, XSS vulnerabilities
-- Unsafe functions (eval(), exec(), system())
-- Command injection vulnerabilities
-- Buffer overflow risks
-{custom_critical_rules}
-
-WARNINGS (allow commit but flag):
-- Actual bugs or logic errors visible in the diff
-- Missing error handling for operations that can fail
-- Security-relevant input validation gaps
-{custom_warnings}
-
-SUGGESTIONS (only if clearly beneficial):
-- Concrete improvements to the changed code
-{custom_suggestions}
-
-{additional_instructions}
-
-Format:
-CRITICAL: file.py:42: issue description
-WARNING: file.py:15: issue description
-SUGGESTION: file.py:30: suggestion
-{code_suggestion_format}
-Changes to review:
-{diff_content}"""
+    DEFAULT_SYSTEM_PROMPT = (
+        "You are a strict, security-focused code reviewer. Analyze ONLY the added/changed"
+        " lines in the git diff the user sends you.\n\n"
+        "Rules:\n"
+        "- Report ONLY issues you can see in the actual diff. Do NOT give generic advice.\n"
+        "- Each issue MUST reference a specific file and line, using format: file.py:42: description\n"
+        '- Added lines in the diff are prefixed with their line number (e.g., "+ 42: code").'
+        " Use these exact numbers when referencing issues.\n"
+        '- If no issues found, respond "NONE" for that category.\n'
+        "- Be concise. Do not repeat yourself.\n"
+        "- Before reporting a bug or logic error, carefully trace the COMPLETE control flow"
+        " — check all branches, shared statements after if/elif/else blocks, and surrounding"
+        " context. Do NOT report issues based on partial reading of the code.\n"
+        "- The diff includes {{context_lines}} lines of context around each changed hunk."
+        " If a construct (try/except block, multiline function call, class definition) is not"
+        " fully visible in the provided context, assume it is correctly handled outside the"
+        " visible area. Do NOT flag incomplete patterns unless you can see the problem directly.\n"
+        "- NEVER reference line numbers or code that is not present in the diff."
+        " Every file:line you cite must correspond to actual content in the diff.\n"
+        "- Do NOT speculate about how code might be called or what data structures might look"
+        " like outside the diff. Only report issues visible in the provided code.\n\n"
+        "CRITICAL ISSUES (block commit):\n"
+        "- Hardcoded credentials, API keys, secrets\n"
+        "- SQL injection, XSS vulnerabilities\n"
+        "- Unsafe shell/code execution functions\n"
+        "- Command injection vulnerabilities\n"
+        "- Buffer overflow risks\n"
+        "{custom_critical_rules}\n\n"
+        "WARNINGS (allow commit but flag):\n"
+        "- Actual bugs or logic errors visible in the diff\n"
+        "- Missing error handling for operations that can fail\n"
+        "- Security-relevant input validation gaps\n"
+        "{custom_warnings}\n\n"
+        "SUGGESTIONS (only if clearly beneficial):\n"
+        "- Concrete improvements to the changed code\n"
+        "{custom_suggestions}\n\n"
+        "{additional_instructions}\n\n"
+        "Format:\n"
+        "CRITICAL: file.py:42: issue description\n"
+        "WARNING: file.py:15: issue description\n"
+        "SUGGESTION: file.py:30: suggestion\n"
+        "{code_suggestion_format}"
+    )
 
     def __init__(self, config, trace: bool = False, trace_llm: bool = False):
         self.config = config
@@ -101,13 +104,16 @@ Changes to review:
         self.trace_llm = trace_llm
         self._setup_logging()
 
-    def _build_prompt(self, diff_content: str) -> str:
-        """Build review prompt from config or use default."""
+    def _build_custom_rule_strings(self) -> Tuple[str, str, str, str]:
+        """Extract and format custom rules from config.
+
+        Returns:
+            Tuple of (critical_str, warnings_str, suggestions_str, additional)
+        """
         prompt_config = self.config.get("prompt") or {}
         if not isinstance(prompt_config, dict):
             prompt_config = {}
 
-        # Build placeholder strings first (needed for both custom and default prompts)
         custom_critical = prompt_config.get("custom_critical_rules") or []
         custom_warnings = prompt_config.get("custom_warnings") or []
         custom_suggestions = prompt_config.get("custom_suggestions") or []
@@ -122,7 +128,7 @@ Changes to review:
         if not isinstance(additional, str):
             additional = ""
 
-        if self.config.get("review.check_docstrings", True):
+        if self.config.get("review.check_docstrings"):
             docstring_rule = (
                 "Flag missing docstrings/documentation comments on functions, methods, "
                 "and classes (especially large ones). Suggest language-appropriate format: "
@@ -131,63 +137,46 @@ Changes to review:
             if docstring_rule not in custom_suggestions:
                 custom_suggestions.append(docstring_rule)
 
-        critical_str = "\n".join(
-            f"- {rule}" for rule in custom_critical if isinstance(rule, str)
-        )
-        warnings_str = "\n".join(
-            f"- {rule}" for rule in custom_warnings if isinstance(rule, str)
-        )
-        suggestions_str = "\n".join(
-            f"- {rule}" for rule in custom_suggestions if isinstance(rule, str)
+        return (
+            "\n".join(f"- {r}" for r in custom_critical if isinstance(r, str)),
+            "\n".join(f"- {r}" for r in custom_warnings if isinstance(r, str)),
+            "\n".join(f"- {r}" for r in custom_suggestions if isinstance(r, str)),
+            additional,
         )
 
-        # Build code suggestion format instructions
+    def _build_system_prompt(self) -> str:
+        """Build system prompt with reviewer instructions (no diff content)."""
+        critical_str, warnings_str, suggestions_str, additional = (
+            self._build_custom_rule_strings()
+        )
+
         if self.config.get_code_suggestions_enabled():
-            code_suggestion_format = """
-IMPORTANT: When a SUGGESTION references a specific file and line, you MUST include a code block with the exact replacement. Use this format:
-
-SUGGESTION: file.py:42: description
-```suggestion
-replacement code here
-```
-
-For multi-line replacements, specify line range:
-SUGGESTION: file.py:42-45: description
-```suggestion
-replacement code
-```
-
-Rules for code suggestions:
-- Every SUGGESTION with file:line MUST have a ```suggestion block with exact replacement code
-- Keep indentation matching the original code
-- Only omit the code block for general advice without a specific file:line reference
-- Line numbers prefixed on added lines (e.g., "+ 42: code") are metadata only. Do NOT include them in suggested code."""
+            code_suggestion_format = (
+                "\nIMPORTANT: When a SUGGESTION references a specific file and line, you MUST"
+                " include a code block with the exact replacement. Use this format:\n\n"
+                "SUGGESTION: file.py:42: description\n"
+                "```suggestion\n"
+                "replacement code here\n"
+                "```\n\n"
+                "For multi-line replacements, specify line range:\n"
+                "SUGGESTION: file.py:42-45: description\n"
+                "```suggestion\n"
+                "replacement code\n"
+                "```\n\n"
+                "Rules for code suggestions:\n"
+                "- Every SUGGESTION with file:line MUST have a ```suggestion block with exact replacement code\n"
+                "- Keep indentation matching the original code\n"
+                "- Only omit the code block for general advice without a specific file:line reference\n"
+                '- Line numbers prefixed on added lines (e.g., "+ 42: code") are metadata only.'
+                " Do NOT include them in suggested code."
+            )
         else:
             code_suggestion_format = ""
 
-        context_lines = self.config.get("output.max_context_lines", 10)
-
-        # Check for custom prompt - pass all placeholders
-        custom_prompt = prompt_config.get("custom_prompt")
-        if custom_prompt and isinstance(custom_prompt, str):
-            try:
-                return custom_prompt.format(
-                    diff_content=diff_content,
-                    custom_critical_rules=critical_str,
-                    custom_warnings=warnings_str,
-                    custom_suggestions=suggestions_str,
-                    additional_instructions=additional,
-                    code_suggestion_format=code_suggestion_format,
-                    context_lines=context_lines,
-                )
-            except KeyError as e:
-                self.logger.warning(
-                    f"Custom prompt has invalid placeholder: {e}. Using default."
-                )
+        context_lines = self.config.get("output.max_context_lines")
 
         try:
-            return self.DEFAULT_PROMPT.format(
-                diff_content=diff_content,
+            return self.DEFAULT_SYSTEM_PROMPT.format(
                 custom_critical_rules=critical_str,
                 custom_warnings=warnings_str,
                 custom_suggestions=suggestions_str,
@@ -196,8 +185,38 @@ Rules for code suggestions:
                 context_lines=context_lines,
             )
         except KeyError as e:
-            self.logger.error(f"Prompt template error: {e}. Using minimal prompt.")
-            return f"Review this code diff for security issues:\n\n{diff_content}"
+            self.logger.error(
+                f"System prompt template error: {e}. Using minimal prompt."
+            )
+            return "You are a strict, security-focused code reviewer."
+
+    def _build_prompt(self, diff_content: str) -> str:
+        """Build combined prompt for token estimation and custom prompt fallback."""
+        prompt_config = self.config.get("prompt") or {}
+        if not isinstance(prompt_config, dict):
+            prompt_config = {}
+
+        custom_prompt = prompt_config.get("custom_prompt")
+        if custom_prompt and isinstance(custom_prompt, str):
+            critical_str, warnings_str, suggestions_str, additional = (
+                self._build_custom_rule_strings()
+            )
+            try:
+                return custom_prompt.format(
+                    diff_content=diff_content,
+                    custom_critical_rules=critical_str,
+                    custom_warnings=warnings_str,
+                    custom_suggestions=suggestions_str,
+                    additional_instructions=additional,
+                    code_suggestion_format="",
+                    context_lines=self.config.get("output.max_context_lines"),
+                )
+            except KeyError as e:
+                self.logger.warning(
+                    f"Custom prompt has invalid placeholder: {e}. Using default."
+                )
+
+        return self._build_system_prompt() + "\n\nChanges to review:\n" + diff_content
 
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count from character count."""
@@ -305,7 +324,7 @@ Rules for code suggestions:
         chars_per_token = self.config.get_chars_per_token()
         max_diff_chars = max_tokens * chars_per_token
 
-        prompt_overhead = len(self._build_prompt(""))
+        prompt_overhead = len(self._build_system_prompt())
         available_diff_chars = max_diff_chars - prompt_overhead
 
         self.logger.info(f"Token limit exceeded. Using strategy: {strategy}")
@@ -509,19 +528,29 @@ Rules for code suggestions:
         client = self._get_client()
         model = self.config.get_model()
         base_url = self.config.get_base_url()
+        max_response_tokens = self.config.get_max_response_tokens()
 
-        prompt = self._build_prompt(diff_content)
-        prompt_tokens = self._estimate_tokens(prompt)
+        system_prompt = self._build_system_prompt()
+        prompt_tokens = self._estimate_tokens(system_prompt + diff_content)
 
         self._trace_print(f"LLM Query: model={model}, base_url={base_url}")
         self._trace_print(f"LLM Query: estimated_tokens={prompt_tokens}")
-        self._trace_llm_request(prompt, model, base_url)
+        if self.trace_llm:
+            self._trace_llm_request(
+                system_prompt + "\n\nChanges to review:\n" + diff_content,
+                model,
+                base_url,
+            )
 
         try:
             response = client.chat.completions.create(
                 model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,  # Low temperature for consistent analysis
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Changes to review:\n{diff_content}"},
+                ],
+                temperature=0.1,  # Low temperature for consistent, reproducible analysis
+                max_tokens=max_response_tokens,
             )
         except OpenAIError as e:
             self._trace_print(f"LLM Query failed: {e}")

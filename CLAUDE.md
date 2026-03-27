@@ -18,7 +18,7 @@ Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++, Go
 
 ```bash
 # Activate virtual environment
-source .python-venv/bin/activate.fish
+source .venv/bin/activate.fish
 
 # Load API key (fish shell)
 source .env.fish
@@ -35,14 +35,21 @@ python review.py --format json              # JSON output for CI/CD
 python review.py --strict                   # Block on warnings too
 python review.py --verbose                  # Verbose output
 python review.py --test-connection          # Test LLM API connectivity
+python review.py --mode staged --offline    # Static analysis only (no LLM)
+python review.py --mode staged --context 20 # Override context lines
+python review.py --mode staged --trace-llm  # Debug: print full LLM request/response
 
 # Install git hooks
 python install_hooks.py
 
 # Code formatting and linting
-ruff format .                               # Format all Python files
-ruff check .                                # Lint all Python files
-ruff check --fix .                          # Auto-fix linting issues
+.venv/bin/ruff format .                     # Format all Python files
+.venv/bin/ruff check .                      # Lint all Python files
+.venv/bin/ruff check --fix .                # Auto-fix linting issues
+
+# Tests
+pytest test_docstrings.py -v                # Test docstring detection
+pytest test_code_suggestions.py -v          # Test code suggestion parsing
 
 # Monitoring
 python monitor.py health                    # System health check
@@ -86,9 +93,11 @@ static_analyzer.py  Fallback security analysis when LLM unavailable
 - `LLM_API_KEY` - API key for LLM service
 - `LLM_BASE_URL` - Override base URL (optional)
 - `LLM_MODEL` - Override model name (optional)
-- `LLM_TIMEOUT` - Request timeout in seconds (default: 180)
-- `LLM_MAX_TOKENS_PER_REQUEST` - Max tokens per review chunk (default: 4096)
+- `LLM_TIMEOUT` - Request timeout in seconds (default: 600)
+- `LLM_MAX_TOKENS_PER_REQUEST` - Max input tokens per review chunk (default: 32768)
+- `LLM_MAX_RESPONSE_TOKENS` - Max tokens in LLM response (default: 16384)
 - `LLM_TOKEN_LIMIT_STRATEGY` - Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`)
+- `LLM_CODE_SUGGESTIONS` - Enable inline code suggestions: `true` or `false` (default: `false`)
 
 ### Current Setup
 - Model: `anthropic/claude-sonnet-4`

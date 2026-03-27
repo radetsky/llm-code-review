@@ -19,9 +19,10 @@ class ReviewConfig:
             "model": "gpt-oss:20b",
             "base_url": None,
             "api_key_env": "LLM_API_KEY",
-            "timeout": 180,
+            "timeout": 600,
             "max_retries": 3,
-            "max_tokens_per_request": 8192,
+            "max_tokens_per_request": 32768,
+            "max_response_tokens": 16384,
             "token_limit_strategy": "chunk",  # "truncate", "chunk", or "skip"
             "chars_per_token": 4,  # Character-to-token ratio for estimation
         },
@@ -173,25 +174,33 @@ class ReviewConfig:
         logger.debug("Using model from config: %s", config_model)
         return config_model
 
-    def get_max_tokens(self) -> int:
-        """Get max tokens per request. Environment variable takes precedence."""
-        env_value = os.getenv("LLM_MAX_TOKENS_PER_REQUEST")
+    def _get_int_config(self, env_var: str, config_key: str) -> int:
+        """Get integer value from environment variable, falling back to config."""
+        env_value = os.getenv(env_var)
         if env_value:
             try:
                 value = int(env_value)
-                logger.debug(
-                    "Using max tokens from LLM_MAX_TOKENS_PER_REQUEST: %d", value
-                )
+                logger.debug("Using %s from %s: %d", config_key, env_var, value)
                 return value
             except ValueError:
                 logger.warning(
-                    "Invalid LLM_MAX_TOKENS_PER_REQUEST value: %s. Using config.",
-                    env_value,
+                    "Invalid %s value: %s. Using config.", env_var, env_value
                 )
-
-        config_value = self.get("llm.max_tokens_per_request", 4096)
-        logger.debug("Using max tokens from config: %d", config_value)
+        config_value = self.get(config_key)
+        logger.debug("Using %s from config: %d", config_key, config_value)
         return config_value
+
+    def get_max_tokens(self) -> int:
+        """Get max input tokens per request. Environment variable takes precedence."""
+        return self._get_int_config(
+            "LLM_MAX_TOKENS_PER_REQUEST", "llm.max_tokens_per_request"
+        )
+
+    def get_max_response_tokens(self) -> int:
+        """Get max response tokens for LLM output. Environment variable takes precedence."""
+        return self._get_int_config(
+            "LLM_MAX_RESPONSE_TOKENS", "llm.max_response_tokens"
+        )
 
     def get_token_limit_strategy(self) -> str:
         """Get token limit strategy. Environment variable takes precedence."""
@@ -212,7 +221,7 @@ class ReviewConfig:
                     valid_strategies,
                 )
 
-        config_value = self.get("llm.token_limit_strategy", "chunk")
+        config_value = self.get("llm.token_limit_strategy")
         if config_value not in valid_strategies:
             logger.warning(
                 "Invalid token_limit_strategy in config: %s. Using 'chunk'.",
@@ -228,11 +237,11 @@ class ReviewConfig:
         env_value = os.getenv("LLM_CODE_SUGGESTIONS")
         if env_value is not None:
             return env_value.lower() in ("true", "1", "yes")
-        return bool(self.get("review.enable_code_suggestions", False))
+        return bool(self.get("review.enable_code_suggestions"))
 
     def get_chars_per_token(self) -> int:
         """Get character-to-token ratio for estimation."""
-        config_value = self.get("llm.chars_per_token", 4)
+        config_value = self.get("llm.chars_per_token")
         if config_value < 1:
             logger.warning("chars_per_token must be >= 1. Using default 4.")
             return 4
@@ -241,20 +250,7 @@ class ReviewConfig:
 
     def get_timeout(self) -> int:
         """Get LLM request timeout in seconds. Environment variable takes precedence."""
-        env_value = os.getenv("LLM_TIMEOUT")
-        if env_value:
-            try:
-                value = int(env_value)
-                logger.debug("Using timeout from LLM_TIMEOUT: %d", value)
-                return value
-            except ValueError:
-                logger.warning(
-                    "Invalid LLM_TIMEOUT value: %s. Using config.", env_value
-                )
-
-        config_value = self.get("llm.timeout", 180)
-        logger.debug("Using timeout from config: %d", config_value)
-        return config_value
+        return self._get_int_config("LLM_TIMEOUT", "llm.timeout")
 
     def is_file_supported(self, file_path: str) -> bool:
         """Check if file extension is supported for review."""
