@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-28
+
 ### Added
 - Rust (`.rs`), Ruby (`.rb`), C# (`.cs`), PHP (`.php`), Kotlin (`.kt`), Swift (`.swift`), Shell (`.sh`), and SQL (`.sql`) added to the default list of reviewed file extensions in `review_config.json`, `review_config_example.json`, and `DEFAULT_CONFIG`.
 - `CRITICAL_RULE_TEXTS` and `WARNING_RULE_TEXTS` mappings in `LLMReviewer` — symbolic rule names in config now map to concrete prompt text lines. Previously `review.critical_rules` and `review.warning_rules` were defined but never used.
