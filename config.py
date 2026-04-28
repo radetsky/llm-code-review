@@ -3,6 +3,7 @@ Configuration management for LLM code review system.
 """
 
 import os
+import sys
 import json
 import logging
 from typing import Dict, Any, Optional
@@ -39,13 +40,16 @@ class ReviewConfig:
                 "sql_injection",
                 "xss_vulnerabilities",
                 "unsafe_functions",
+                "command_injection",
+                "buffer_overflow",
                 "file_operations_without_validation",
             ],
             "warning_rules": [
-                "code_style_violations",
                 "potential_bugs",
-                "performance_issues",
                 "missing_error_handling",
+                "input_validation",
+                "code_style_violations",
+                "performance_issues",
                 "documentation_gaps",
             ],
             "enable_code_suggestions": False,
@@ -89,25 +93,49 @@ class ReviewConfig:
         },
     }
 
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_file: Optional[str] = None, explicit: bool = False):
+        """Initialize configuration.
+
+        Args:
+            config_file: Path to configuration file. Defaults to review_config.json.
+            explicit: If True, the file was explicitly specified by the user — missing
+                or malformed file is a fatal error. If False, a missing default config
+                file silently falls back to built-in defaults.
+        """
         self.config_file = config_file or "review_config.json"
+        self.explicit = explicit
         self.config = self._load_config()
 
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file or use defaults."""
         config_path = Path(self.config_file)
 
-        if config_path.exists():
-            try:
-                with open(config_path, "r") as f:
-                    user_config = json.load(f)
-                logger.debug("Loaded configuration from %s", self.config_file)
-                return self._merge_configs(self.DEFAULT_CONFIG, user_config)
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning("Could not load config file %s: %s", self.config_file, e)
-                logger.info("Using default configuration")
+        if not config_path.exists():
+            if self.explicit:
+                print(
+                    f"Error: Config file not found: {self.config_file}",
+                    file=sys.stderr,
+                )
+                sys.exit(4)
+            return self.DEFAULT_CONFIG.copy()
 
-        return self.DEFAULT_CONFIG.copy()
+        try:
+            with open(config_path, "r") as f:
+                user_config = json.load(f)
+            logger.debug("Loaded configuration from %s", self.config_file)
+            return self._merge_configs(self.DEFAULT_CONFIG, user_config)
+        except json.JSONDecodeError as e:
+            print(
+                f"Error: Invalid JSON in config file '{self.config_file}': {e}",
+                file=sys.stderr,
+            )
+            sys.exit(4)
+        except IOError as e:
+            print(
+                f"Error: Cannot read config file '{self.config_file}': {e}",
+                file=sys.stderr,
+            )
+            sys.exit(4)
 
     def _merge_configs(
         self, default: Dict[str, Any], user: Dict[str, Any]

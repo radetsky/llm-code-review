@@ -23,13 +23,16 @@
       "sql_injection",
       "xss_vulnerabilities",
       "unsafe_functions",
+      "command_injection",
+      "buffer_overflow",
       "file_operations_without_validation"
     ],
     "warning_rules": [
-      "code_style_violations",
       "potential_bugs",
-      "performance_issues",
       "missing_error_handling",
+      "input_validation",
+      "code_style_violations",
+      "performance_issues",
       "documentation_gaps"
     ],
     "enable_code_suggestions": false,

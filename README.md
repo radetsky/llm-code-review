@@ -16,10 +16,9 @@ Automated code review powered by LLM. Works with any OpenAI-compatible API (Open
 
 ## Supported File Types
 
-Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++, Go, YAML (`.yml`, `.yaml`)
+Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++, Go, Rust, Ruby, C#, PHP, Kotlin, Swift, Shell, SQL, YAML (`.yml`, `.yaml`)
 
-> YAML support covers GitHub Actions workflows, docker-compose files, Kubernetes manifests,
-> and other infrastructure-as-code files. Configure `review.file_extensions` to add or remove types.
+> Configure `review.file_extensions` in `review_config.json` to restrict or extend this list per project.
 
 ## Quick Start
 
@@ -130,35 +129,79 @@ Edit `review_config.json` to customize rules, or use environment variables:
 | `LLM_TOKEN_LIMIT_STRATEGY` | Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`) | No |
 | `LLM_CODE_SUGGESTIONS` | Enable inline code change suggestions: `true` or `false` (default: `false`) | No |
 
+### Built-in Rule Categories
+
+`review.critical_rules` and `review.warning_rules` select which built-in check categories are included in the LLM prompt. Remove a name to disable that category for the project.
+
+**Available critical rules:**
+
+| Name | Checks for |
+|------|-----------|
+| `hardcoded_credentials` | Hardcoded credentials, API keys, or secrets |
+| `sql_injection` | SQL injection vulnerabilities |
+| `xss_vulnerabilities` | XSS (cross-site scripting) vulnerabilities |
+| `unsafe_functions` | Unsafe shell/code execution functions |
+| `command_injection` | Command injection vulnerabilities |
+| `buffer_overflow` | Buffer overflow risks |
+| `file_operations_without_validation` | File operations without path or input validation |
+
+**Available warning rules:**
+
+| Name | Checks for |
+|------|-----------|
+| `potential_bugs` | Actual bugs or logic errors visible in the diff |
+| `missing_error_handling` | Missing error handling for operations that can fail |
+| `input_validation` | Security-relevant input validation gaps |
+| `code_style_violations` | Code style violations that impact readability |
+| `performance_issues` | Performance issues with measurable impact |
+| `documentation_gaps` | Missing or inadequate documentation on public APIs |
+
+Example — Rust project that disables web-specific checks and enables memory-safety ones:
+
+```json
+{
+  "review": {
+    "critical_rules": [
+      "hardcoded_credentials",
+      "unsafe_functions",
+      "command_injection",
+      "buffer_overflow",
+      "file_operations_without_validation"
+    ],
+    "warning_rules": [
+      "potential_bugs",
+      "missing_error_handling"
+    ]
+  }
+}
+```
+
 ### Custom Review Rules
 
-Add project-specific rules to the `prompt` section in `review_config.json`:
+Add project-specific rules on top of the selected built-in categories via the `prompt` section:
 
 ```json
 {
   "prompt": {
     "custom_critical_rules": [
-      "Rust `unsafe` blocks - block any use of `unsafe` keyword",
-      "Raw SQL queries without parameterization"
+      "Rust `unsafe` blocks - block any use of `unsafe` keyword without justification",
+      "FFI calls without proper validation"
     ],
     "custom_warnings": [
-      "Missing error handling with unwrap()",
-      "Clone on large structs"
+      "unwrap() or expect() in non-test code without a comment explaining why it cannot panic"
     ],
-    "custom_suggestions": [
-      "Use clippy lint suggestions"
-    ],
-    "additional_instructions": "This is a Rust project. Pay special attention to memory safety."
+    "custom_suggestions": [],
+    "additional_instructions": "This is a Rust project. Report only HIGH-confidence issues."
   }
 }
 ```
 
 **Options:**
-- `custom_critical_rules` - Additional rules that block commits
-- `custom_warnings` - Additional rules that warn but allow commits
+- `custom_critical_rules` - Project-specific rules that block commits (appended after built-in critical rules)
+- `custom_warnings` - Project-specific rules that warn but allow commits (appended after built-in warnings)
 - `custom_suggestions` - Additional improvement suggestions
-- `additional_instructions` - Extra context for the LLM (language, framework, etc.)
-- `custom_prompt` - Completely replace the default prompt with placeholders support (see below)
+- `additional_instructions` - Extra context or constraints for the LLM (language, confidence threshold, etc.)
+- `custom_prompt` - Completely replace the default prompt with placeholder support (see below)
 
 ### Custom Prompt with Placeholders
 
@@ -167,7 +210,7 @@ For full control over the review prompt, use `custom_prompt` with placeholders:
 ```json
 {
   "prompt": {
-    "custom_prompt": "You are a code reviewer.\n\nCRITICAL:\n{custom_critical_rules}\n\nWARNINGS:\n{custom_warnings}\n\n{additional_instructions}\n\nReview:\n{diff_content}\n\nRespond with CRITICAL:, WARNING:, or SUGGESTION: prefixes.",
+    "custom_prompt": "You are a code reviewer.\n\nCRITICAL:\n{critical_rules_section}\n\nWARNINGS:\n{warning_rules_section}\n\n{additional_instructions}\n\nReview:\n{diff_content}\n\nRespond with CRITICAL:, WARNING:, or SUGGESTION: prefixes.",
     "custom_critical_rules": ["memory leaks", "race conditions"],
     "custom_warnings": ["deprecated API usage"],
     "additional_instructions": "Focus on thread safety"
@@ -177,9 +220,9 @@ For full control over the review prompt, use `custom_prompt` with placeholders:
 
 **Available placeholders:**
 - `{diff_content}` - The git diff to review
-- `{custom_critical_rules}` - Formatted list of custom critical rules
-- `{custom_warnings}` - Formatted list of custom warnings
-- `{custom_suggestions}` - Formatted list of custom suggestions
+- `{critical_rules_section}` - Full CRITICAL ISSUES list (built-in rules + `custom_critical_rules`)
+- `{warning_rules_section}` - Full WARNINGS list (built-in rules + `custom_warnings`)
+- `{suggestions_section}` - Full SUGGESTIONS list (base line + `custom_suggestions`)
 - `{additional_instructions}` - Additional instructions text
 - `{context_lines}` - Number of context lines shown around each change (from config)
 

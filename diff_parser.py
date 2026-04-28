@@ -70,7 +70,12 @@ class DiffParser:
             # File header
             if line.startswith("diff --git"):
                 if current_file:
+                    if current_hunk:
+                        current_file["hunks"].append(current_hunk)
                     files.append(current_file)
+                current_hunk = None
+                old_line_num = 0
+                new_line_num = 0
 
                 # Extract file paths
                 match = re.search(r"b/(.+)$", line)

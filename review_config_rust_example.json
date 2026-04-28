@@ -15,24 +15,31 @@
       "FFI calls without proper validation"
     ],
     "custom_warnings": [
-      "Missing `#[derive(...)]` macros for structs (Debug, Clone, etc.)",
-      "Unwrap() or expect() in production code - prefer proper error handling",
-      "Clone on large structs - consider using references",
-      "Mutex without proper lock handling"
+      "unwrap() or expect() in non-test code without a comment explaining why it cannot panic"
     ],
-    "custom_suggestions": [
-      "Use `clippy` lint suggestions",
-      "Consider using `thiserror` for error types",
-      "Use `serde` derives for serialization"
-    ],
-    "additional_instructions": "This is a Rust project. Pay special attention to memory safety, ownership rules, and lifetime annotations. Any use of `unsafe` must be thoroughly justified."
+    "custom_suggestions": [],
+    "additional_instructions": "This is a Rust project. Pay special attention to memory safety, ownership rules, and lifetime annotations. Any use of `unsafe` must be thoroughly justified. Report only HIGH-confidence issues. If you are less than 80% sure something is a real problem, do NOT report it. Prefer false negatives over false positives. Do NOT report stylistic preferences, naming conventions, or 'consider doing X' style advice. IMPORTANT: Do NOT assume the raw C/OS/Win32 API signature for functions used in `unsafe` blocks. Rust crates (e.g. the `windows` crate) often wrap raw APIs to return `Result<T>` instead of a primitive. If the code calls a function and chains `.map_err(...)` or `?` on the result, treat the return type as `Result` — do not flag it as a type error."
   },
   "review": {
-    "file_extensions": [".rs", ".toml"],
+    "critical_rules": [
+      "hardcoded_credentials",
+      "unsafe_functions",
+      "command_injection",
+      "buffer_overflow",
+      "file_operations_without_validation"
+    ],
+    "warning_rules": [
+      "potential_bugs",
+      "missing_error_handling"
+    ],
+    "enable_code_suggestions": false,
+    "check_docstrings": false,
+    "file_extensions": [".rs", ".toml", ".ts", ".js"],
     "exclude_patterns": [
       "target/",
       ".git/",
-      "Cargo.lock"
+      "Cargo.lock",
+      "public/"
     ]
   }
 }

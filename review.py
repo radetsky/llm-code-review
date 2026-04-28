@@ -46,8 +46,19 @@ class ReviewCLI:
         # Update trace mode if specified
         self.trace = getattr(parsed_args, "trace", False)
         self.trace_llm = getattr(parsed_args, "trace_llm", False)
-        self.reviewer.trace = self.trace
-        self.reviewer.trace_llm = self.trace_llm
+
+        # Reload config if --config-file was explicitly specified
+        if parsed_args.config_file:
+            self.config = ReviewConfig(
+                config_file=parsed_args.config_file, explicit=True
+            )
+            self.parser = DiffParser(self.config)
+            self.reviewer = LLMReviewer(
+                self.config, trace=self.trace, trace_llm=self.trace_llm
+            )
+        else:
+            self.reviewer.trace = self.trace
+            self.reviewer.trace_llm = self.trace_llm
 
         # Handle mutually exclusive --offline and --test-connection
         if parsed_args.offline and parsed_args.test_connection:
@@ -117,6 +128,7 @@ class ReviewCLI:
         """Create command-line argument parser."""
         parser = argparse.ArgumentParser(
             description="LLM-powered code review tool",
+            allow_abbrev=False,
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 Examples:

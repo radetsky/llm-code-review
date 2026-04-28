@@ -4,6 +4,22 @@
 
 ### Added
 - Rust (`.rs`), Ruby (`.rb`), C# (`.cs`), PHP (`.php`), Kotlin (`.kt`), Swift (`.swift`), Shell (`.sh`), and SQL (`.sql`) added to the default list of reviewed file extensions in `review_config.json`, `review_config_example.json`, and `DEFAULT_CONFIG`.
+- `CRITICAL_RULE_TEXTS` and `WARNING_RULE_TEXTS` mappings in `LLMReviewer` — symbolic rule names in config now map to concrete prompt text lines. Previously `review.critical_rules` and `review.warning_rules` were defined but never used.
+- `command_injection` and `buffer_overflow` added to the default `critical_rules` list (were already mentioned in the hardcoded prompt but absent from config).
+- `input_validation` added to the default `warning_rules` list.
+
+### Changed
+- `review.critical_rules` and `review.warning_rules` config fields are now functional. They control which built-in check categories appear in the LLM prompt. Project-specific rules go into `prompt.custom_critical_rules` and `prompt.custom_warnings` as before, and are appended after the selected built-in rules.
+- CRITICAL ISSUES and WARNINGS sections in the system prompt are now fully dynamic — built from `review.critical_rules`/`review.warning_rules` (mapped to text) plus `prompt.custom_*` (raw text). Previously the built-in rule lines were hardcoded in the prompt regardless of config.
+- `--config-file` CLI flag now correctly loads and applies the specified config file. Previously the flag was parsed by argparse but the loaded config was ignored — the tool always used defaults or `review_config.json`.
+- Malformed JSON in any config file now causes an immediate fatal error with a descriptive message (exit code 4) instead of silently falling back to built-in defaults.
+- Explicitly specified `--config-file` pointing to a non-existent path now causes a fatal error (exit code 4).
+- Unrecognized or abbreviated CLI arguments (e.g. `--config` instead of `--config-file`) now cause an immediate error instead of being silently matched to a similar-looking flag. (`argparse allow_abbrev=False`).
+- Custom prompt placeholder names updated: `{custom_critical_rules}` → `{critical_rules_section}`, `{custom_warnings}` → `{warning_rules_section}`, `{custom_suggestions}` → `{suggestions_section}`.
+- `review_config_rust_example.json`: replaced `sql_injection`/`xss_vulnerabilities` with `buffer_overflow`/`command_injection` in `critical_rules`; reduced `custom_warnings` to one high-confidence rule (`unwrap()`/`expect()` without a safety comment); cleared `custom_suggestions`.
+
+### Fixed
+- `review_config_rust_example.json` contained invalid JSON (extra closing brace, trailing commas in arrays), causing silent fallback to default config on every run.
 
 ## [0.1.4] - 2026-03-27
 

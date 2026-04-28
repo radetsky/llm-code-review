@@ -7,7 +7,7 @@ import re
 import time
 import random
 import logging
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 from openai import OpenAI, OpenAIError
@@ -70,30 +70,34 @@ class LLMReviewer:
         " If a construct (try/except block, multiline function call, class definition) is not"
         " fully visible in the provided context, assume it is correctly handled outside the"
         " visible area. Do NOT flag incomplete patterns unless you can see the problem directly.\n"
+        "- Do NOT make claims about symbols whose definitions are not visible in the diff."
+        " If a function, method, class, struct, interface, type, or field is referenced"
+        " but not defined in the visible code, assume it exists and behaves correctly."
+        ' Never assert that a struct/interface "has no such field", that a function'
+        ' "returns the wrong type", or that a method "does not exist" based on a partial view.\n'
+        "- Do NOT use your training-data knowledge about external library or OS API function"
+        " signatures to judge the code. The project may use wrapper crates, bindings, or"
+        " re-exports that change the return type (e.g. a Windows API that returns BOOL in C"
+        " may return Result<()> in its Rust binding). If the call compiles and the usage"
+        " pattern is consistent with the visible code, treat it as correct.\n"
+        "- Do NOT claim that an import, variable, parameter, or symbol is unused unless"
+        " you can see its entire scope in the diff. A diff shows only changed lines plus"
+        " limited context, so usages may exist outside the visible area. If you cannot"
+        " see the full file or function body, assume the symbol is used elsewhere.\n"
         "- NEVER reference line numbers or code that is not present in the diff."
         " Every file:line you cite must correspond to actual content in the diff.\n"
         "- Do NOT speculate about how code might be called or what data structures might look"
         " like outside the diff. Only report issues visible in the provided code.\n\n"
         "CRITICAL ISSUES (block commit):\n"
-        "- Hardcoded credentials, API keys, secrets\n"
-        "- SQL injection, XSS vulnerabilities\n"
-        "- Unsafe shell/code execution functions\n"
-        "- Command injection vulnerabilities\n"
-        "- Buffer overflow risks\n"
-        "{custom_critical_rules}\n\n"
+        "{critical_rules_section}\n\n"
         "WARNINGS (allow commit but flag):\n"
-        "- Actual bugs or logic errors visible in the diff\n"
-        "- Missing error handling for operations that can fail\n"
-        "- Security-relevant input validation gaps\n"
-        "{custom_warnings}\n\n"
-        "SUGGESTIONS (only if clearly beneficial):\n"
-        "- Concrete improvements to the changed code\n"
-        "{custom_suggestions}\n\n"
+        "{warning_rules_section}\n\n"
+        "{suggestions_block}"
         "{additional_instructions}\n\n"
         "Format:\n"
         "CRITICAL: file.py:42: issue description\n"
         "WARNING: file.py:15: issue description\n"
-        "SUGGESTION: file.py:30: suggestion\n"
+        "{suggestion_format_line}"
         "{code_suggestion_format}"
     )
 
@@ -104,29 +108,76 @@ class LLMReviewer:
         self.trace_llm = trace_llm
         self._setup_logging()
 
-    def _build_custom_rule_strings(self) -> Tuple[str, str, str, str]:
-        """Extract and format custom rules from config.
+    CRITICAL_RULE_TEXTS: Dict[str, str] = {
+        "hardcoded_credentials": "Hardcoded credentials, API keys, or secrets",
+        "sql_injection": "SQL injection vulnerabilities",
+        "xss_vulnerabilities": "XSS (cross-site scripting) vulnerabilities",
+        "unsafe_functions": "Unsafe shell/code execution functions",
+        "command_injection": "Command injection vulnerabilities",
+        "buffer_overflow": "Buffer overflow risks",
+        "file_operations_without_validation": "File operations without path or input validation",
+    }
+
+    WARNING_RULE_TEXTS: Dict[str, str] = {
+        "potential_bugs": "Actual bugs or logic errors visible in the diff",
+        "missing_error_handling": "Missing error handling for operations that can fail",
+        "input_validation": "Security-relevant input validation gaps",
+        "code_style_violations": "Code style violations that impact readability or maintainability",
+        "performance_issues": "Performance issues with measurable impact",
+        "documentation_gaps": "Missing or inadequate documentation on public APIs",
+    }
+
+    def _build_rules_sections(self) -> Tuple[str, str, str, str]:
+        """Build rule text sections for the system prompt.
+
+        Combines symbolic rule names from review config (mapped to text via
+        CRITICAL_RULE_TEXTS / WARNING_RULE_TEXTS) with custom raw-text rules
+        from prompt config. Unknown symbolic names are logged and skipped.
 
         Returns:
-            Tuple of (critical_str, warnings_str, suggestions_str, additional)
+            Tuple of (critical_section, warnings_section, suggestions_section, additional)
         """
         prompt_config = self.config.get("prompt") or {}
         if not isinstance(prompt_config, dict):
             prompt_config = {}
 
-        custom_critical = prompt_config.get("custom_critical_rules") or []
-        custom_warnings = prompt_config.get("custom_warnings") or []
-        custom_suggestions = prompt_config.get("custom_suggestions") or []
-        additional = prompt_config.get("additional_instructions") or ""
+        critical_names = self.config.get("review.critical_rules") or []
+        critical_lines = []
+        for name in critical_names:
+            if not isinstance(name, str):
+                continue
+            text = self.CRITICAL_RULE_TEXTS.get(name)
+            if text:
+                critical_lines.append(f"- {text}")
+            else:
+                self.logger.warning("Unknown critical rule name in config: %s", name)
 
-        if not isinstance(custom_critical, list):
-            custom_critical = []
-        if not isinstance(custom_warnings, list):
-            custom_warnings = []
+        custom_critical = prompt_config.get("custom_critical_rules") or []
+        if isinstance(custom_critical, list):
+            critical_lines.extend(
+                f"- {r}" for r in custom_critical if isinstance(r, str)
+            )
+
+        warning_names = self.config.get("review.warning_rules") or []
+        warning_lines = []
+        for name in warning_names:
+            if not isinstance(name, str):
+                continue
+            text = self.WARNING_RULE_TEXTS.get(name)
+            if text:
+                warning_lines.append(f"- {text}")
+            else:
+                self.logger.warning("Unknown warning rule name in config: %s", name)
+
+        custom_warnings = prompt_config.get("custom_warnings") or []
+        if isinstance(custom_warnings, list):
+            warning_lines.extend(
+                f"- {r}" for r in custom_warnings if isinstance(r, str)
+            )
+
+        custom_suggestions = prompt_config.get("custom_suggestions") or []
         if not isinstance(custom_suggestions, list):
             custom_suggestions = []
-        if not isinstance(additional, str):
-            additional = ""
 
         if self.config.get("review.check_docstrings"):
             docstring_rule = (
@@ -137,20 +188,40 @@ class LLMReviewer:
             if docstring_rule not in custom_suggestions:
                 custom_suggestions.append(docstring_rule)
 
+        suggestions_lines = ["- Concrete improvements to the changed code"]
+        suggestions_lines.extend(
+            f"- {r}" for r in custom_suggestions if isinstance(r, str)
+        )
+
+        additional = prompt_config.get("additional_instructions") or ""
+        if not isinstance(additional, str):
+            additional = ""
+
         return (
-            "\n".join(f"- {r}" for r in custom_critical if isinstance(r, str)),
-            "\n".join(f"- {r}" for r in custom_warnings if isinstance(r, str)),
-            "\n".join(f"- {r}" for r in custom_suggestions if isinstance(r, str)),
+            "\n".join(critical_lines),
+            "\n".join(warning_lines),
+            "\n".join(suggestions_lines),
             additional,
         )
 
     def _build_system_prompt(self) -> str:
         """Build system prompt with reviewer instructions (no diff content)."""
-        critical_str, warnings_str, suggestions_str, additional = (
-            self._build_custom_rule_strings()
+        critical_section, warning_section, suggestions_section, additional = (
+            self._build_rules_sections()
         )
 
-        if self.config.get_code_suggestions_enabled():
+        suggestions_enabled = self.config.get_code_suggestions_enabled()
+
+        if suggestions_enabled:
+            suggestions_block = (
+                f"SUGGESTIONS (only if clearly beneficial):\n{suggestions_section}\n\n"
+            )
+            suggestion_format_line = "SUGGESTION: file.py:30: suggestion\n"
+        else:
+            suggestions_block = "Do NOT output any SUGGESTION: lines.\n\n"
+            suggestion_format_line = ""
+
+        if suggestions_enabled:
             code_suggestion_format = (
                 "\nIMPORTANT: When a SUGGESTION references a specific file and line, you MUST"
                 " include a code block with the exact replacement. Use this format:\n\n"
@@ -177,9 +248,10 @@ class LLMReviewer:
 
         try:
             return self.DEFAULT_SYSTEM_PROMPT.format(
-                custom_critical_rules=critical_str,
-                custom_warnings=warnings_str,
-                custom_suggestions=suggestions_str,
+                critical_rules_section=critical_section,
+                warning_rules_section=warning_section,
+                suggestions_block=suggestions_block,
+                suggestion_format_line=suggestion_format_line,
                 additional_instructions=additional,
                 code_suggestion_format=code_suggestion_format,
                 context_lines=context_lines,
@@ -198,15 +270,15 @@ class LLMReviewer:
 
         custom_prompt = prompt_config.get("custom_prompt")
         if custom_prompt and isinstance(custom_prompt, str):
-            critical_str, warnings_str, suggestions_str, additional = (
-                self._build_custom_rule_strings()
+            critical_section, warning_section, suggestions_section, additional = (
+                self._build_rules_sections()
             )
             try:
                 return custom_prompt.format(
                     diff_content=diff_content,
-                    custom_critical_rules=critical_str,
-                    custom_warnings=warnings_str,
-                    custom_suggestions=suggestions_str,
+                    critical_rules_section=critical_section,
+                    warning_rules_section=warning_section,
+                    suggestions_section=suggestions_section,
                     additional_instructions=additional,
                     code_suggestion_format="",
                     context_lines=self.config.get("output.max_context_lines"),
@@ -601,6 +673,9 @@ class LLMReviewer:
                 i += 1
 
             elif line.startswith("SUGGESTION:"):
+                if not self.config.get_code_suggestions_enabled():
+                    i += 1
+                    continue
                 suggestion_text = line[11:].strip()
                 if not suggestion_text or suggestion_text == "NONE":
                     i += 1
