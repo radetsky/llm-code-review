@@ -17,7 +17,7 @@ REVIEW_RESULT_FILE="/tmp/llm-review-$(date +%s).json"
 echo "📊 Analyzing changes since last push..."
 
 # Run review on all changes since last push
-python review.py --mode all --format json > "$REVIEW_RESULT_FILE" 2>/dev/null
+llm-code-review --mode all --format json > "$REVIEW_RESULT_FILE" 2>/dev/null
 exit_code=$?
 
 echo "Exit code: $exit_code"
@@ -39,7 +39,7 @@ case $exit_code in
         echo "   Please fix the critical issues before pushing."
         echo ""
         echo "📄 Full review report:"
-        cat "$REVIEW_RESULT_FILE" | python -m json.tool | grep -E "(critical_issues|warnings)" -A 10
+        python3 -m json.tool "$REVIEW_RESULT_FILE" | grep -E "(critical_issues|warnings)" -A 10
         exit 1
         ;;
     2)

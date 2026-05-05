@@ -13,7 +13,7 @@ if [ ! -f "review.py" ]; then
 fi
 
 # Run review on staged changes
-python review.py --mode staged --format text 2>/dev/null
+llm-code-review --mode staged --format text 2>/dev/null
 exit_code=$?
 set -e  # Re-enable exit on error
 
@@ -46,7 +46,7 @@ case $exit_code in
     4)
         echo ""
         echo "❌ Configuration error. Please check your setup."
-        echo "   Run 'python review.py --test-connection' to diagnose."
+        echo "   Run 'llm-code-review --test-connection' to diagnose."
         exit 1
         ;;
     *)
