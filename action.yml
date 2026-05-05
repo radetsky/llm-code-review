@@ -42,9 +42,9 @@ inputs:
     required: false
     default: 'true'
   code_suggestions:
-    description: 'Enable inline code change suggestions (default: true)'
+    description: 'Enable inline code change suggestions (default: false)'
     required: false
-    default: 'true'
+    default: 'false'
   max_tokens:
     description: 'Max tokens per LLM request (default: 32768). Reduce if your provider has a lower limit.'
     required: false
