@@ -66,7 +66,7 @@ class LLMReviewer:
         "- Before reporting a bug or logic error, carefully trace the COMPLETE control flow"
         " — check all branches, shared statements after if/elif/else blocks, and surrounding"
         " context. Do NOT report issues based on partial reading of the code.\n"
-        "- The diff includes {{context_lines}} lines of context around each changed hunk."
+        "- The diff includes {context_lines} lines of context around each changed hunk."
         " If a construct (try/except block, multiline function call, class definition) is not"
         " fully visible in the provided context, assume it is correctly handled outside the"
         " visible area. Do NOT flag incomplete patterns unless you can see the problem directly.\n"

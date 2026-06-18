@@ -2,7 +2,13 @@ name: LLM Code Review (Self-test)
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
+    paths-ignore:
+      - ".github/**"
+      - "*.md"
+      - "*.txt"
+      - "LICENSE"
+  workflow_dispatch:
 
 permissions:
   contents: read

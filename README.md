@@ -102,16 +102,18 @@ export LLM_MODEL="llama3.2"
 ## CLI Reference
 
 ```bash
-llm-code-review --mode staged          # Review staged changes (default)
-llm-code-review --mode unstaged        # Review unstaged changes
-llm-code-review --mode all             # Review all uncommitted changes
-llm-code-review --base main --head dev # Compare branches
-llm-code-review --format json          # JSON output for CI/CD
-llm-code-review --strict               # Block on warnings too
-llm-code-review --verbose              # Detailed output
-llm-code-review --offline              # Static analysis only (no API key needed)
-llm-code-review --context 15           # Use 15 context lines around each change (default: 10)
-llm-code-review --test-connection      # Test API connectivity
+llm-code-review --mode staged              # Review staged changes (default)
+llm-code-review --mode unstaged            # Review unstaged changes
+llm-code-review --mode all                 # Review all uncommitted changes
+llm-code-review --base main --head dev     # Compare branches
+llm-code-review --format json              # JSON output for CI/CD
+llm-code-review --strict                   # Block on warnings too
+llm-code-review --verbose                  # Detailed output
+llm-code-review --offline                  # Static analysis only (no API key needed)
+llm-code-review --context 15               # Use 15 context lines around each change (default: 10)
+llm-code-review --test-connection          # Test API connectivity
+llm-code-review --config-file my.json      # Use a specific config file
+llm-code-review --trace-llm                # Dump full LLM prompts and responses to stderr
 ```
 
 ## Configuration
@@ -280,6 +282,7 @@ llm-code-review --mode staged --context 20
 | 2 | Warnings only | Allow commit |
 | 3 | LLM unavailable | Allow (static fallback) |
 | 4 | Config error | Block commit |
+| 5 | Review skipped (token limit exceeded) | Allow commit |
 
 ## What It Detects
 
@@ -372,7 +375,7 @@ Add optional inputs to customize behavior:
           post_comment: 'true'         # Post review as PR comment (default: true)
           fail_on_critical: 'true'     # Fail action on critical issues (default: true)
           inline_comments: 'true'      # Post inline comments on code lines (default: true)
-          code_suggestions: 'true'    # Enable code change suggestions (default: true)
+          code_suggestions: 'false'   # Enable code change suggestions (default: false)
           # max_tokens: '32768'       # Max tokens per LLM request (default: 32768)
           # timeout: '600'            # LLM request timeout in seconds (default: 600)
 
@@ -392,11 +395,14 @@ Add optional inputs to customize behavior:
 | `api_key` | LLM API key | Yes | - |
 | `base_url` | API endpoint URL | No | config |
 | `model` | Model name | No | config |
+| `mode` | Review mode: `staged`, `unstaged`, `all` (uses base/head for PRs if omitted) | No | auto |
+| `base` | Base commit/branch for diff (auto-detected for PRs) | No | auto |
+| `head` | Head commit/branch for diff (auto-detected for PRs) | No | auto |
 | `strict` | Fail on warnings | No | `false` |
 | `post_comment` | Post PR comment | No | `true` |
 | `fail_on_critical` | Fail on critical issues | No | `true` |
 | `inline_comments` | Post inline review comments on code lines | No | `true` |
-| `code_suggestions` | Enable inline code change suggestions | No | `true` |
+| `code_suggestions` | Enable inline code change suggestions | No | `false` |
 | `max_tokens` | Max tokens per LLM request | No | `32768` |
 | `timeout` | LLM request timeout in seconds | No | `600` |
 | `context` | Number of context lines around each change | No | `10` |
@@ -405,7 +411,7 @@ Add optional inputs to customize behavior:
 
 | Output | Description |
 |--------|-------------|
-| `status` | Review status: success, warnings, critical, error |
+| `status` | Review status: `success`, `warnings`, `critical`, `error`, `model_unavailable` |
 | `critical_count` | Number of critical issues |
 | `warning_count` | Number of warnings |
 | `suggestion_count` | Number of suggestions |

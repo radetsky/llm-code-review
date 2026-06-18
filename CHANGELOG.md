@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-05-06
+
+### Fixed (docs)
+- `README.md`: exit code `5` (review skipped due to token limit) was missing from the Exit Codes table.
+- `README.md`: `code_suggestions` Action input default corrected from `true` to `false` in both the Action Inputs table and the advanced workflow example, matching `action.yml`.
+- `README.md`: Action Inputs table was missing `mode`, `base`, and `head` inputs that are accepted by the GitHub Action.
+- `README.md`: Action Outputs table listed `status` values as `success, warnings, critical, error`; added missing `model_unavailable` value.
+- `README.md`: CLI Reference was missing `--config-file` and `--trace-llm` flags.
+
 ## [0.1.5] - 2026-04-28
 
 ### Added
