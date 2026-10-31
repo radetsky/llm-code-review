@@ -1,6 +1,7 @@
 """Tests for the agent loop, using a scripted fake LLM client."""
 
 import json
+import re
 import subprocess
 from types import SimpleNamespace
 
@@ -137,17 +138,23 @@ class TestPrompt:
     def test_efficiency_rules_are_present(self):
         prompt = agent_core.DEFAULT_SYSTEM_PROMPT
         for phrase in (
-            "Do not read whole files",
-            "Never read a range you have already seen",
-            "Aim to finish within 8 steps",
-            "up to 4",
+            "Do not read a whole file",
+            "Do not read a range two times",
+            "8 steps or fewer",
+            "The maximum is 4 calls",
         ):
             assert phrase in prompt
 
-    def test_prompt_never_talks_about_blocking(self):
-        assert "block" not in agent_core.DEFAULT_SYSTEM_PROMPT.lower().replace(
-            "never mention blocking", ""
-        )
+    def test_review_is_advisory(self):
+        prompt = agent_core.DEFAULT_SYSTEM_PROMPT
+        assert "The review is advisory" in prompt
+        assert "block commit" not in prompt.lower()
+
+    def test_prompt_sentences_are_short(self):
+        """ASD-STE100: a sentence has 25 words or fewer (20 for a procedure)."""
+        text = agent_core.DEFAULT_SYSTEM_PROMPT
+        for sentence in re.split(r"(?<=[.:])\s+|\n+", text):
+            assert len(sentence.split()) <= 25, sentence
 
 
 # -- loop ------------------------------------------------------------------
@@ -275,7 +282,7 @@ class TestLoop:
         msgs = client.requests[1]["messages"]
         assert [c["id"] for c in msgs[2]["tool_calls"]] == ["c0", "c1", "c2", "c3"]
         assert [m["tool_call_id"] for m in msgs[3:7]] == ["c0", "c1", "c2", "c3"]
-        assert "2 further tool call(s)" in msgs[6]["content"]
+        assert "2 tool call(s) did not run" in msgs[6]["content"]
         assert "further" not in msgs[5]["content"]
         assert result.agent_stats["ignored_tool_calls"] == 2
         assert result.agent_stats["tool_calls"] == 4
@@ -391,7 +398,7 @@ class TestBudgets:
             "function": {"name": SUBMIT_TOOL},
         }
         assert [t["function"]["name"] for t in forced["tools"]] == [SUBMIT_TOOL]
-        assert "Budget exhausted (max_steps)" in forced["messages"][-1]["content"]
+        assert "The budget is used up (max_steps)" in forced["messages"][-1]["content"]
 
     def test_token_budget_forces_submit(self, tools):
         tools.config.config["agent"]["max_total_tokens"] = 150
@@ -451,7 +458,7 @@ class TestRepeatedCalls:
         assert result.agent_stats["duplicate_tool_calls"] == 2
         assert len(client.requests) == 4
         repeat = client.requests[2]["messages"][-1]["content"]
-        assert repeat.startswith("Already returned earlier in this review")
+        assert repeat.startswith("You already got this result earlier in this review")
 
     def test_progress_resets_the_counter(self, tools):
         script = [

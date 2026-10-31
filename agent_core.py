@@ -41,8 +41,8 @@ SUBMIT_SPEC = {
     "function": {
         "name": SUBMIT_TOOL,
         "description": (
-            "Submit the final review. Call exactly once, when finished. "
-            "Pass an empty findings list if there are no problems."
+            "Send the final review. Call this tool one time, when you finish. "
+            "If you find no problems, send an empty findings list."
         ),
         "parameters": {
             "type": "object",
@@ -59,16 +59,16 @@ SUBMIT_SPEC = {
                             "file": {"type": "string"},
                             "line": {
                                 "type": "integer",
-                                "description": "Line in the NEW version of the file",
+                                "description": "Line number in the new version of the file",
                             },
                             "line_end": {"type": "integer"},
                             "message": {"type": "string"},
                             "suggested_code": {
                                 "type": "string",
                                 "description": (
-                                    "Replacement for lines line..line_end. "
-                                    "Only for severity=suggestion. Code only, "
-                                    "no line numbers or fences."
+                                    "New code for the lines from line to line_end. "
+                                    "Use it only with severity suggestion. Give code "
+                                    "only, with no line numbers and no code fences."
                                 ),
                             },
                         },
@@ -81,23 +81,23 @@ SUBMIT_SPEC = {
     },
 }
 
-DEFAULT_SYSTEM_PROMPT = """You are a code reviewer working on a git change.
-Use the tools to inspect the change and the surrounding code, then call submit_review once.
+DEFAULT_SYSTEM_PROMPT = """You are a code reviewer. You review one git change.
+Use the tools to examine the change and the code around it. Then call submit_review one time.
 
 Rules:
-- Review only the changed lines. Use other files only to verify a suspected problem.
-- Report a problem only if you confirmed it in the code. No generic advice.
-- Line numbers refer to the new version of the file and must point to a line shown in the diff.
-- Severity: critical = security flaw or definite bug; warning = likely bug or risky code; suggestion = improvement.
-- The review is advisory. Never mention blocking a commit or merge.
-- Prefer few precise findings over many uncertain ones. An empty findings list is a valid result.
+- Review only the changed lines. Use other files only to check a possible problem.
+- Report a problem only when you confirm it in the code. Do not give general advice.
+- Use line numbers of the new version of the file. Each line number must show in the diff.
+- Use these severity levels. critical: a security flaw or a sure bug. warning: a probable bug or risky code. suggestion: an improvement.
+- The review is advisory. Do not say that a commit or a merge is blocked.
+- Report few findings that you are sure about. Do not report doubtful findings. An empty findings list is a correct result.
 
-Working efficiently (every step re-sends the whole conversation, so steps are expensive):
-- Call get_diff for each changed file first. Request independent tools together in one message (up to 4).
-- To check code outside the diff, locate it with grep or find_definition, then read a narrow range (about 20-80 lines) with read_file. Do not read whole files.
-- Never read a range you have already seen; earlier tool results stay in the conversation.
-- Investigate only concrete suspicions. When each one is confirmed or dismissed, call submit_review. Do not explore for completeness.
-- Aim to finish within 8 steps."""
+Work efficiently. Each step sends the full conversation again, and this costs tokens.
+- Call get_diff for each changed file first. Put independent tool calls in one message. The maximum is 4 calls.
+- To check code outside the diff, find it with grep or find_definition. Then read 20 to 80 lines with read_file. Do not read a whole file.
+- Do not read a range two times. The results of earlier calls stay in the conversation.
+- Investigate only specific suspicions. When you confirm or reject each suspicion, call submit_review. Do not look for more.
+- Try to finish in 8 steps or fewer."""
 
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 FENCE_RE = re.compile(r"^```[A-Za-z0-9_+-]*\s*\n(.*?)\n?```\s*$", re.DOTALL)
@@ -315,10 +315,10 @@ class AgentReviewer:
             {
                 "role": "user",
                 "content": (
-                    "Review the following change. Changed files:\n"
+                    "Review this change. These files changed:\n"
                     f"{tools.changed_files_summary()}\n\n"
-                    "Inspect the diffs with get_diff, verify suspicious code with the "
-                    "other tools, then call submit_review."
+                    "Read each diff with get_diff. Use the other tools to check "
+                    "suspect code. Then call submit_review."
                 ),
             },
         ]
@@ -369,7 +369,7 @@ class AgentReviewer:
                     messages.append(
                         {
                             "role": "user",
-                            "content": "Continue with the tools, or call submit_review with your findings.",
+                            "content": "Use a tool, or call submit_review with your findings.",
                         }
                     )
                     continue
@@ -423,9 +423,9 @@ class AgentReviewer:
                 stale_steps = stale_steps + 1 if all_repeats else 0
                 if ignored:
                     outputs[-1] += (
-                        f"\n[{ignored} further tool call(s) in this message were "
-                        f"not run: at most {MAX_CALLS_PER_STEP} per message. "
-                        "Repeat them in your next message if still needed.]"
+                        f"\n[{ignored} tool call(s) did not run. The limit is "
+                        f"{MAX_CALLS_PER_STEP} calls for each message. Send them again "
+                        "in your next message if you need them.]"
                     )
                 for (call_id, *_), output in zip(batch, outputs):
                     messages.append(
@@ -512,8 +512,8 @@ class AgentReviewer:
             {
                 "role": "user",
                 "content": (
-                    f"Budget exhausted ({reason}). Call submit_review now with the "
-                    "findings you have confirmed so far."
+                    f"The budget is used up ({reason}). Call submit_review now. "
+                    "Include only the findings that you confirmed."
                 ),
             }
         )

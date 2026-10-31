@@ -131,7 +131,7 @@ class TestReadFile:
         out = tools.call(
             "read_file", {"path": "app.py", "start_line": 99, "end_line": 100}
         )
-        assert out == "(no lines in range; the file has 6 lines)"
+        assert out == "(No lines in this range. The file has 6 lines.)"
 
     def test_missing_file(self, tools):
         assert tools.call("read_file", {"path": "nope.py"}) == "Error: file not found"
@@ -145,38 +145,38 @@ class TestReadFile:
         out = tools.call("read_file", {"path": "big.py"})
         lines = out.split("\n")
         assert lines[0] == "1: x0 = 0" and lines[299] == "300: x299 = 299"
-        assert lines[-1].startswith("[showing lines 1-300 of 5000;")
-        assert "[output truncated" not in out
+        assert lines[-1].startswith("[Lines 1-300 of 5000 shown.")
+        assert "[Output cut" not in out
 
     def test_window_size_from_config(self, tools):
         tools.config.config["agent"]["read_default_lines"] = 10
         out = tools.call("read_file", {"path": "big.py"})
         assert out.split("\n")[9] == "10: x9 = 9"
-        assert "[showing lines 1-10 of 5000;" in out
+        assert "[Lines 1-10 of 5000 shown." in out
 
     def test_window_starts_at_start_line(self, tools):
         out = tools.call("read_file", {"path": "big.py", "start_line": 1000})
         assert out.startswith("1000: x999 = 999")
-        assert "[showing lines 1000-1299 of 5000;" in out
+        assert "[Lines 1000-1299 of 5000 shown." in out
 
     def test_explicit_range_has_no_hint_and_ignores_window(self, tools):
         tools.config.config["agent"]["read_default_lines"] = 10
         out = tools.call(
             "read_file", {"path": "big.py", "start_line": 1, "end_line": 50}
         )
-        assert out.endswith("50: x49 = 49") and "[showing" not in out
+        assert out.endswith("50: x49 = 49") and "[Lines" not in out
 
     def test_small_file_has_no_hint(self, tools):
-        assert "[showing" not in tools.call("read_file", {"path": "app.py"})
+        assert "[Lines" not in tools.call("read_file", {"path": "app.py"})
 
     def test_window_exactly_file_size_has_no_hint(self, tools):
         tools.config.config["agent"]["read_default_lines"] = 6
-        assert "[showing" not in tools.call("read_file", {"path": "app.py"})
+        assert "[Lines" not in tools.call("read_file", {"path": "app.py"})
 
     def test_empty_file(self, tools, repo):
         open(os.path.join(repo, "empty.py"), "w").close()
         _git(repo, "add", "empty.py")
-        assert tools.call("read_file", {"path": "empty.py"}) == "(empty)"
+        assert tools.call("read_file", {"path": "empty.py"}) == "(The file is empty.)"
 
     def test_repeated_read_is_not_returned_twice(self, tools):
         first = tools.call(
@@ -186,7 +186,7 @@ class TestReadFile:
             "read_file", {"path": "app.py", "start_line": 1, "end_line": 3}
         )
         assert first.startswith("1: def foo")
-        assert again.startswith("Already returned earlier in this review")
+        assert again.startswith("You already got this result earlier in this review")
         assert 'read_file({"end_line": 3, "path": "app.py", "start_line": 1})' in again
 
     def test_different_range_or_file_is_read_normally(self, tools):
@@ -199,12 +199,12 @@ class TestReadFile:
     def test_whole_file_read_twice_is_deduplicated(self, tools):
         tools.call("read_file", {"path": "app.py"})
         assert tools.call("read_file", {"path": "app.py"}).startswith(
-            "Already returned"
+            "You already got this result"
         )
         # An equivalent explicit range (cut at the end of the file) is also a repeat.
         assert tools.call(
             "read_file", {"path": "app.py", "start_line": 1, "end_line": 999}
-        ).startswith("Already returned")
+        ).startswith("You already got this result")
 
     def test_errors_are_not_remembered_as_reads(self, tools):
         assert tools.call("read_file", {"path": "nope.py"}) == "Error: file not found"
@@ -311,7 +311,7 @@ class TestHistory:
         out = tools.call(
             "git_blame", {"path": "big.py", "start_line": 1, "end_line": 5000}
         )
-        assert out.count("Tester") <= 200 or "[output truncated" in out
+        assert out.count("Tester") <= 200 or "[Output cut" in out
 
     def test_git_blame_missing_file(self, tools):
         out = tools.call(
@@ -351,8 +351,10 @@ class TestCallDeduplication:
         ]:
             first = tools.call(name, args)
             second = tools.call(name, args)
-            assert not first.startswith("Already returned"), name
-            assert second.startswith("Already returned earlier in this review"), name
+            assert not first.startswith("You already got this result"), name
+            assert second.startswith(
+                "You already got this result earlier in this review"
+            ), name
             assert name in second
 
     def test_argument_order_does_not_matter(self, tools):
@@ -360,14 +362,16 @@ class TestCallDeduplication:
         again = tools.call(
             "git_blame", {"end_line": 2, "start_line": 1, "path": "util.py"}
         )
-        assert again.startswith("Already returned")
+        assert again.startswith("You already got this result")
 
     def test_different_arguments_are_not_deduplicated(self, tools):
         tools.call("grep", {"pattern": "foo"})
         assert tools.call("grep", {"pattern": "bar"}) != tools.call(
             "grep", {"pattern": "foo"}
         )
-        assert not tools.call("grep", {"pattern": "return"}).startswith("Already")
+        assert not tools.call("grep", {"pattern": "return"}).startswith(
+            "You already got"
+        )
 
     def test_failed_calls_can_be_retried(self, tools, repo):
         assert tools.call("read_file", {"path": "late.py"}) == "Error: file not found"

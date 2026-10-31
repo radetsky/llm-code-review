@@ -16,7 +16,7 @@ from diff_parser import DiffParser, RepoAccessError, RepoSource
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MAX_LINE_CHARS = 300
 MAX_FIND_RESULTS = 100
-DUPLICATE_PREFIX = "Already returned earlier in this review"
+DUPLICATE_PREFIX = "You already got this result earlier in this review"
 SOURCE_TRUNCATED = (
     "\n[truncated]"  # Marker that RepoSource.read adds when it cuts the text.
 )
@@ -40,25 +40,31 @@ def _fn(name: str, description: str, properties: dict, required: list[str]) -> d
 TOOL_SPECS: list[dict] = [
     _fn(
         "list_changed_files",
-        "List files changed in the reviewed diff with added/removed line counts.",
+        "List the changed files. Show the number of added and removed lines for each file.",
         {},
         [],
     ),
     _fn(
         "get_diff",
-        "Get the numbered diff of one changed file.",
-        {"path": {"type": "string", "description": "Repository-relative path"}},
+        "Show the diff of one changed file. Each line has its line number.",
+        {"path": {"type": "string", "description": "Path from the repository root"}},
         ["path"],
     ),
     _fn(
         "read_file",
-        "Read a file. Lines are prefixed with numbers. Without end_line only a "
-        "limited window of lines is returned, so pass start_line/end_line and "
-        "prefer narrow ranges (20-80 lines).",
+        "Read a file. Each line has its line number. If you give no end_line, "
+        "the tool returns only the first lines. Give start_line and end_line to "
+        "read a specific part. Use narrow ranges of 20 to 80 lines.",
         {
             "path": {"type": "string"},
-            "start_line": {"type": "integer", "description": "1-based, inclusive"},
-            "end_line": {"type": "integer", "description": "1-based, inclusive"},
+            "start_line": {
+                "type": "integer",
+                "description": "First line to read (the first line of a file is 1)",
+            },
+            "end_line": {
+                "type": "integer",
+                "description": "Last line to read (this line is included)",
+            },
         },
         ["path"],
     ),
@@ -69,35 +75,40 @@ TOOL_SPECS: list[dict] = [
             "pattern": {"type": "string"},
             "path": {
                 "type": "string",
-                "description": "Optional directory or file to limit the search",
+                "description": "Directory or file to search in. Optional.",
             },
         },
         ["pattern"],
     ),
     _fn(
         "find_files",
-        "Find files by glob pattern, e.g. '*.py' or 'test_*.py'.",
+        "Find files with a glob pattern, for example '*.py' or 'test_*.py'.",
         {"pattern": {"type": "string"}},
         ["pattern"],
     ),
     _fn(
         "find_definition",
         "Find where a function, class, struct, type or constant is defined.",
-        {"name": {"type": "string", "description": "Identifier name"}},
+        {"name": {"type": "string", "description": "Name of the identifier"}},
         ["name"],
     ),
     _fn(
         "git_log",
-        "Show recent commits, optionally only those touching a path.",
+        "Show the latest commits. Give a path to show only the commits that "
+        "change this path.",
         {
             "path": {"type": "string"},
-            "max_count": {"type": "integer", "description": "1-50, default 10"},
+            "max_count": {
+                "type": "integer",
+                "description": "From 1 to 50. The default is 10.",
+            },
         },
         [],
     ),
     _fn(
         "git_blame",
-        "Show who last changed each line in a range (at most 200 lines).",
+        "Show the last commit for each line in a range. The maximum range is "
+        "200 lines.",
         {
             "path": {"type": "string"},
             "start_line": {"type": "integer"},
@@ -167,7 +178,7 @@ class AgentTools:
             shown = json.dumps(arguments, ensure_ascii=False, sort_keys=True)
             return (
                 f"{DUPLICATE_PREFIX}: {name}({shown}). "
-                "Use that result; do not repeat the call."
+                "Use that result. Do not repeat the call."
             )
         try:
             output = self._truncate(handler(arguments))
@@ -189,9 +200,8 @@ class AgentTools:
         if len(text) <= limit:
             return text
         return (
-            text[:limit]
-            + f"\n[output truncated: showing {limit} of {len(text)} chars; "
-            "narrow the request]"
+            text[:limit] + f"\n[Output cut: {limit} of {len(text)} characters shown. "
+            "Make the request narrower.]"
         )
 
     @staticmethod
@@ -267,11 +277,11 @@ class AgentTools:
             lines.pop()
         total = len(lines)
         if total == 0:
-            return "(empty)"
+            return "(The file is empty.)"
 
         first = start or 1
         if first > total:
-            return f"(no lines in range; the file has {total} lines)"
+            return f"(No lines in this range. The file has {total} lines.)"
         window = int(self.config.get("agent.read_default_lines", 300))
         last = min(end if end is not None else first + window - 1, total)
 
@@ -279,7 +289,7 @@ class AgentTools:
         if key in self._seen_reads:
             return (
                 f"{DUPLICATE_PREFIX}: {path} lines {first}-{last}. "
-                "Use that result instead of reading it again."
+                "Use that result. Do not read it again."
             )
         self._seen_reads.add(key)
 
@@ -288,13 +298,11 @@ class AgentTools:
         )
         if end is None and last < total:
             numbered += (
-                f"\n[showing lines {first}-{last} of {total}; call read_file "
-                "with start_line/end_line to see other parts]"
+                f"\n[Lines {first}-{last} of {total} shown. Call read_file "
+                "with start_line and end_line to read other parts.]"
             )
         elif last == total and source_truncated:
-            numbered += (
-                "\n[file is larger than the read limit; the rest is not available]"
-            )
+            numbered += "\n[The file is larger than the read limit. The rest of the file is not available.]"
         return numbered
 
     def _grep(self, args: dict) -> str:
@@ -326,7 +334,7 @@ class AgentTools:
         if not matches:
             return (
                 f"No definition of '{name}' found. "
-                "Try grep for a call site or a C/Java-style declaration."
+                "Use grep to find a call, or a C or Java declaration."
             )
         return self._format_matches(matches)
 
