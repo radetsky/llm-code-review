@@ -8,7 +8,7 @@ and validates findings against the diff before returning a ReviewResult.
 
 Qwen/SGLang specifics handled here: ``<think>`` blocks in content,
 ``reasoning_content`` (traced, never sent back), sloppy JSON in tool
-arguments, and several tool calls in one message (only the first is run).
+arguments, and several tool calls in one message (up to 4 run in order).
 """
 
 import json
@@ -25,6 +25,7 @@ from review_core import CodeSuggestion, ReviewResult
 
 SUBMIT_TOOL = "submit_review"
 MAX_NUDGES = 2
+MAX_CALLS_PER_STEP = 4
 SEVERITIES = {
     "critical": "critical",
     "warning": "warning",
@@ -293,6 +294,7 @@ class AgentReviewer:
             "tokens": 0,
             "tool_calls": 0,
             "invalid_tool_calls": 0,
+            "ignored_tool_calls": 0,
             "forced_submit": None,
             "dropped_findings": 0,
             "duration_sec": 0.0,
@@ -360,41 +362,59 @@ class AgentReviewer:
                     )
                     continue
 
-                call = calls[0]  # no parallel tool calls: run the first only
-                if len(calls) > 1:
+                batch, ignored = self._select_calls(calls, stats["steps"])
+                stats["ignored_tool_calls"] += ignored
+                if ignored:
                     self._trace(
-                        f"step {stats['steps']}: ignoring {len(calls) - 1} extra tool call(s)"
+                        f"step {stats['steps']}: ignoring {ignored} tool call(s) "
+                        f"(limit {MAX_CALLS_PER_STEP} per message; submit_review "
+                        "ends the review and is run alone)"
                     )
-                name = call.function.name
-                args, error = parse_arguments(call.function.arguments)
-                call_id = getattr(call, "id", None) or f"call_{stats['steps']}"
-                messages.append(self._assistant_message(content, call_id, name, args))
+                messages.append(self._assistant_message(content, batch))
 
-                if name == SUBMIT_TOOL:
-                    result, problem = self._build_result(args, error, tools, stats)
-                    if result is not None:
-                        stats["stop_reason"] = "submitted"
-                        self._trace(f"step {stats['steps']}: submit_review accepted")
-                        return finish(result)
-                    stats["invalid_tool_calls"] += 1
-                    output = f"Error: {problem}"
-                elif error:
-                    stats["invalid_tool_calls"] += 1
-                    output = f"Error: {error}"
-                else:
-                    stats["tool_calls"] += 1
-                    output = tools.call(name, args)
-                    if output.startswith("Error: unknown tool"):
+                outputs: list[str] = []
+                for index, (call_id, name, args, error, raw) in enumerate(batch, 1):
+                    if name == SUBMIT_TOOL:
+                        result, problem = self._build_result(args, error, tools, stats)
+                        if result is not None:
+                            stats["stop_reason"] = "submitted"
+                            self._trace(
+                                f"step {stats['steps']}: submit_review accepted"
+                            )
+                            return finish(result)
                         stats["invalid_tool_calls"] += 1
+                        output = f"Error: {problem}"
+                    elif error:
+                        stats["invalid_tool_calls"] += 1
+                        output = f"Error: {error}"
+                    else:
+                        stats["tool_calls"] += 1
+                        output = tools.call(name, args)
+                        if output.startswith("Error: unknown tool"):
+                            stats["invalid_tool_calls"] += 1
 
-                self._trace(
-                    f"step {stats['steps']}/{max_steps}: {name}"
-                    f"({json.dumps(args, ensure_ascii=False) if args is not None else call.function.arguments})"
-                    f" -> {len(output)} chars | tokens used: {stats['tokens']}"
-                )
-                messages.append(
-                    {"role": "tool", "tool_call_id": call_id, "content": output}
-                )
+                    shown = (
+                        json.dumps(args, ensure_ascii=False)
+                        if args is not None
+                        else raw
+                    )
+                    self._trace(
+                        f"step {stats['steps']}/{max_steps} [{index}/{len(batch)}]: "
+                        f"{name}({shown}) -> {len(output)} chars | "
+                        f"tokens used: {stats['tokens']}"
+                    )
+                    outputs.append(output)
+
+                if ignored:
+                    outputs[-1] += (
+                        f"\n[{ignored} further tool call(s) in this message were "
+                        f"not run: at most {MAX_CALLS_PER_STEP} per message. "
+                        "Repeat them in your next message if still needed.]"
+                    )
+                for (call_id, *_), output in zip(batch, outputs):
+                    messages.append(
+                        {"role": "tool", "tool_call_id": call_id, "content": output}
+                    )
         except OpenAIError as e:
             stats["stop_reason"] = "model_unavailable"
             self._trace(f"LLM error: {e}")
@@ -414,9 +434,31 @@ class AgentReviewer:
         )
 
     @staticmethod
-    def _assistant_message(
-        content: str, call_id: str, name: str, args: dict | None
-    ) -> dict:
+    def _select_calls(calls: list, step: int) -> tuple[list[tuple], int]:
+        """Pick the tool calls to run from one model message.
+
+        Returns ([(id, name, args, error, raw_arguments)], ignored_count).
+        submit_review ends the review, so when present it is run alone.
+        Ids are made unique; missing ids are generated.
+        """
+        parsed = []
+        seen: set[str] = set()
+        for index, call in enumerate(calls):
+            call_id = getattr(call, "id", None)
+            if not call_id or call_id in seen:
+                call_id = f"call_{step}_{index}"
+            seen.add(call_id)
+            raw = call.function.arguments
+            args, error = parse_arguments(raw)
+            parsed.append((call_id, call.function.name, args, error, raw))
+
+        for entry in parsed:
+            if entry[1] == SUBMIT_TOOL:
+                return [entry], len(parsed) - 1
+        return parsed[:MAX_CALLS_PER_STEP], max(len(parsed) - MAX_CALLS_PER_STEP, 0)
+
+    @staticmethod
+    def _assistant_message(content: str, batch: list[tuple]) -> dict:
         return {
             "role": "assistant",
             "content": content,
@@ -429,6 +471,7 @@ class AgentReviewer:
                         "arguments": json.dumps(args if args is not None else {}),
                     },
                 }
+                for call_id, name, args, _error, _raw in batch
             ],
         }
 

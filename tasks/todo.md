@@ -29,7 +29,7 @@
 
 ## Фаза 3 — Цикл агента (`agent_core.py`)
 - [x] Цикл, бюджети (`max_steps`, `max_total_tokens`, `wall_timeout_sec`), примусовий `submit_review`
-- [x] Qwen: вирізати `<think>`, читати `reasoning_content`, терпимий JSON аргументів, без parallel tool calls
+- [x] Qwen: вирізати `<think>`, читати `reasoning_content`, терпимий JSON аргументів, до 4 tool calls в одному повідомленні виконуються по черзі (`submit_review` завершує цикл)
 - [x] `submit_review` → `ReviewResult` / `CodeSuggestion`
 - [x] Пост-валідація знахідок: файл і рядок є в diff, дедуплікація, чисті `suggested_code`
 - [x] Тести з фейковим клієнтом (успіх, перевищення кроків, битий JSON, невідомий інструмент, модель без tool-calls)

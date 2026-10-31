@@ -205,29 +205,107 @@ class TestLoop:
         assert "secret plan" not in history and "more secret" not in history
         assert client.requests[1]["messages"][2]["content"] == "Looking"
 
-    def test_only_first_tool_call_runs(self, tools):
-        _, client = run(
+    def test_all_tool_calls_run_in_order(self, tools):
+        result, client = run(
             tools,
             [
                 reply(
                     calls=[
                         tool_call("list_changed_files", {}, "a"),
                         tool_call("read_file", {"path": "app.py"}, "b"),
+                        tool_call("find_files", {"pattern": "*.py"}, "c"),
                     ]
                 ),
                 submit([]),
             ],
         )
         msgs = client.requests[1]["messages"]
-        assistant = msgs[2]
-        assert [c["id"] for c in assistant["tool_calls"]] == ["a"]
-        assert msgs[3]["tool_call_id"] == "a"
+        assert [c["id"] for c in msgs[2]["tool_calls"]] == ["a", "b", "c"]
+        tool_msgs = msgs[3:6]
+        assert [m["tool_call_id"] for m in tool_msgs] == ["a", "b", "c"]
+        assert "app.py (modified)" in tool_msgs[0]["content"]
+        assert "5: def bar():" in tool_msgs[1]["content"]
+        assert tool_msgs[2]["content"] == "app.py\nother.py"
+        # One model step, three tool executions.
+        assert result.agent_stats["steps"] == 2
+        assert result.agent_stats["tool_calls"] == 3
+        assert result.agent_stats["ignored_tool_calls"] == 0
+
+    def test_bad_call_does_not_block_the_others(self, tools):
+        result, client = run(
+            tools,
+            [
+                reply(
+                    calls=[
+                        tool_call("read_file", "{broken", "a"),
+                        tool_call("rm_rf", {}, "b"),
+                        tool_call("read_file", {"path": "app.py"}, "c"),
+                    ]
+                ),
+                submit([]),
+            ],
+        )
+        tool_msgs = client.requests[1]["messages"][3:6]
+        assert "not valid JSON" in tool_msgs[0]["content"]
+        assert "unknown tool" in tool_msgs[1]["content"]
+        assert "1: def foo():" in tool_msgs[2]["content"]
+        assert result.agent_stats["invalid_tool_calls"] == 2
+        assert result.agent_stats["tool_calls"] == 2
+
+    def test_calls_beyond_the_limit_are_not_run_and_model_is_told(self, tools):
+        calls = [tool_call("list_changed_files", {}, f"c{i}") for i in range(6)]
+        result, client = run(tools, [reply(calls=calls), submit([])])
+        msgs = client.requests[1]["messages"]
+        assert [c["id"] for c in msgs[2]["tool_calls"]] == ["c0", "c1", "c2", "c3"]
+        assert [m["tool_call_id"] for m in msgs[3:7]] == ["c0", "c1", "c2", "c3"]
+        assert "2 further tool call(s)" in msgs[6]["content"]
+        assert "further" not in msgs[5]["content"]
+        assert result.agent_stats["ignored_tool_calls"] == 2
+        assert result.agent_stats["tool_calls"] == 4
+
+    def test_submit_among_calls_runs_alone(self, tools):
+        calls = [
+            tool_call("read_file", {"path": "app.py"}, "a"),
+            tool_call(SUBMIT_TOOL, {"findings": [finding()]}, "b"),
+            tool_call("list_changed_files", {}, "c"),
+        ]
+        result, client = run(tools, [reply(calls=calls)])
+        assert result.warnings == ["app.py:2: Problem"]
+        assert len(client.requests) == 1
+        assert result.agent_stats["tool_calls"] == 0
+        assert result.agent_stats["ignored_tool_calls"] == 2
+
+    def test_invalid_submit_among_calls_gets_a_reply_and_retry(self, tools):
+        bad = tool_call(SUBMIT_TOOL, {"findings": "none"}, "b")
+        result, client = run(
+            tools,
+            [
+                reply(calls=[tool_call("read_file", {"path": "app.py"}, "a"), bad]),
+                submit([finding()]),
+            ],
+        )
+        msgs = client.requests[1]["messages"]
+        assert [c["id"] for c in msgs[2]["tool_calls"]] == ["b"]
+        assert msgs[3]["tool_call_id"] == "b" and msgs[3]["content"].startswith(
+            "Error:"
+        )
+        assert result.status == "success"
+
+    def test_duplicate_ids_are_made_unique(self, tools):
+        calls = [
+            tool_call("list_changed_files", {}, "same"),
+            tool_call("find_files", {"pattern": "*.py"}, "same"),
+        ]
+        _, client = run(tools, [reply(calls=calls), submit([])])
+        ids = [c["id"] for c in client.requests[1]["messages"][2]["tool_calls"]]
+        assert ids == ["same", "call_1_1"]
+        assert [m["tool_call_id"] for m in client.requests[1]["messages"][3:5]] == ids
 
     def test_missing_tool_call_id_is_generated(self, tools):
         call = tool_call("list_changed_files", {})
         call.id = None
         _, client = run(tools, [reply(calls=[call]), submit([])])
-        assert client.requests[1]["messages"][3]["tool_call_id"] == "call_1"
+        assert client.requests[1]["messages"][3]["tool_call_id"] == "call_1_0"
 
 
 class TestToolErrors:
@@ -488,7 +566,7 @@ class TestTrace:
             trace=True,
         )
         err = capsys.readouterr().err
-        assert "[TRACE] step 1/20: read_file" in err
+        assert "[TRACE] step 1/20 [1/1]: read_file" in err
         assert '"path": "app.py"' in err
         assert "submit_review accepted" in err
         assert "LLM REQUEST" not in err
@@ -516,6 +594,13 @@ class TestTrace:
         assert "def bar()" in err  # tool result in the second request
         assert "showing 2 new" in err  # second request prints only the delta
         assert self.SECRET not in err
+
+    def test_trace_shows_each_call_and_ignored(self, tools, capsys):
+        calls = [tool_call("list_changed_files", {}, f"c{i}") for i in range(5)]
+        run(tools, [reply(calls=calls), submit([])], trace=True)
+        err = capsys.readouterr().err
+        assert "[1/4]: list_changed_files" in err and "[4/4]: list_changed_files" in err
+        assert "ignoring 1 tool call(s)" in err
 
     def test_trace_reports_forced_submit(self, tools, capsys):
         tools.config.config["agent"]["max_steps"] = 1
