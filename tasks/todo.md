@@ -36,11 +36,11 @@
 - [ ] (3b, лише якщо фаза 0 покаже відсутність tool calling) текстовий протокол
 
 ## Фаза 4 — CLI
-- [ ] `--engine agent|classic` (env `LLM_ENGINE`, конфіг `agent.enabled`), стартово classic
-- [ ] `--fail-on none|critical|warnings`, дефолт `none`; `--strict` як аліас `warnings`
-- [ ] Хуки `pre-commit` / `pre-push` завжди `exit 0`
-- [x] (зроблено у фазі 3, `agent_core.py`) `--trace` друкує кроки агента; `--trace-llm` — повні запити/відповіді (CLI-прапори підключити у фазі 4)
-- [ ] Оновити таблицю exit-кодів у `CLAUDE.md` (інформаційна)
+- [x] `--engine agent|classic` (env `LLM_ENGINE`, конфіг `agent.enabled`), стартово classic
+- [x] `--fail-on none|critical|warnings`, дефолт `none`; `--strict` як аліас `warnings`
+- [x] Хуки `pre-commit` / `pre-push` завжди `exit 0`
+- [x] (зроблено у фазі 3, `agent_core.py`) `--trace` друкує кроки агента; `--trace-llm` — повні запити/відповіді (CLI-прапори `--trace` / `--trace-llm` підключені до агента у фазі 4)
+- [x] Оновити таблицю exit-кодів у `CLAUDE.md` (інформаційна)
 
 ## Фаза 5 — Промпт
 - [ ] `prompts/agent_system.md` (закриває пункт з `TODO.md`): роль, правила, формат, без «block commit»

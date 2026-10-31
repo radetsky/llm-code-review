@@ -11,7 +11,9 @@ import sys
 from typing import Dict, Any
 from pathlib import Path
 from config import ReviewConfig
-from diff_parser import DiffParser
+from agent_core import AgentReviewer
+from agent_tools import AgentTools
+from diff_parser import DiffParser, RepoSource
 from review_core import LLMReviewer, ReviewResult
 
 
@@ -34,6 +36,7 @@ class ReviewCLI:
         self.reviewer = LLMReviewer(self.config, trace=trace, trace_llm=trace_llm)
         self.trace = trace
         self.trace_llm = trace_llm
+        self.engine_used = "classic"
 
     def run(self, args=None):
         """Run CLI with provided arguments."""
@@ -48,6 +51,22 @@ class ReviewCLI:
         self.trace_llm = getattr(parsed_args, "trace_llm", False)
         self.reviewer.trace = self.trace
         self.reviewer.trace_llm = self.trace_llm
+
+        # Resolve engine and failure policy
+        try:
+            engine = self.config.get_engine(getattr(parsed_args, "engine", None))
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 4
+        explicit = getattr(parsed_args, "fail_on", None)
+        if parsed_args.strict and explicit not in (None, "warnings"):
+            print(
+                f"Error: --strict is an alias of --fail-on warnings and conflicts "
+                f"with --fail-on {explicit}.",
+                file=sys.stderr,
+            )
+            return 2
+        parsed_args.fail_on = "warnings" if parsed_args.strict else (explicit or "none")
 
         # Handle mutually exclusive --offline and --test-connection
         run_checks = parsed_args.test_connection or parsed_args.test_tools
@@ -107,10 +126,17 @@ class ReviewCLI:
         try:
             # Perform review
             if parsed_args.offline:
+                self.engine_used = "static"
                 result = self._run_offline_review(parsed_args)
             else:
-                diff_content = self._get_diff_content(parsed_args)
-                result = self.reviewer.review_diff(diff_content)
+                parsed_files, diff_content = self._load_diff(parsed_args)
+                if engine == "agent":
+                    result = self._run_agent_review(
+                        parsed_args, parsed_files, diff_content
+                    )
+                else:
+                    self.engine_used = "classic"
+                    result = self.reviewer.review_diff(diff_content)
 
             # Output results
             self._output_results(result, parsed_args)
@@ -131,7 +157,8 @@ class ReviewCLI:
 Examples:
   python review.py --mode staged                     # Review staged changes
   python review.py --mode unstaged --format json     # Review unstaged in JSON
-  python review.py --mode all --strict               # Review all with strict mode
+  python review.py --mode all --fail-on warnings     # Exit 1 on warnings too
+  python review.py --mode staged --engine agent      # Agentic review with tools
   python review.py --base main --head feature        # Review between branches
   python review.py --mode staged --offline           # Offline static analysis only
             """,
@@ -160,9 +187,21 @@ Examples:
             help="Output format (default: text)",
         )
         parser.add_argument(
+            "--engine",
+            choices=["agent", "classic"],
+            help="Review engine (default: LLM_ENGINE, then agent.enabled, then classic)",
+        )
+        parser.add_argument(
+            "--fail-on",
+            dest="fail_on",
+            choices=["none", "critical", "warnings"],
+            help="Exit 1 on critical issues / any issues. Default: none "
+            "(the review is advisory and exits 0)",
+        )
+        parser.add_argument(
             "--strict",
             action="store_true",
-            help="Block commit on any issues (including warnings)",
+            help="Alias for --fail-on warnings",
         )
         parser.add_argument(
             "--verbose",
@@ -172,12 +211,12 @@ Examples:
         parser.add_argument(
             "--trace",
             action="store_true",
-            help="Trace output showing LLM queries and tool usage",
+            help="Trace output: LLM queries, agent steps and tool calls",
         )
         parser.add_argument(
             "--trace-llm",
             action="store_true",
-            help="Dump full LLM prompts and responses to stderr",
+            help="Dump full LLM requests and responses (incl. tool calls) to stderr",
         )
         parser.add_argument(
             "--offline",
@@ -236,8 +275,8 @@ Examples:
 
         return True
 
-    def _get_diff_content(self, args) -> str:
-        """Get diff content based on arguments."""
+    def _load_diff(self, args) -> tuple[list, str]:
+        """Return (parsed_files, formatted_diff) for the requested diff."""
         if getattr(args, "context", None) is not None:
             self.config.config["output"]["max_context_lines"] = args.context
 
@@ -258,19 +297,59 @@ Examples:
                 print(f"  - {file_data['path']} ({file_data['type']})", file=sys.stderr)
             print("", file=sys.stderr)
 
-        return formatted_diff
+        return parsed_files, formatted_diff
+
+    def _get_diff_content(self, args) -> str:
+        """Get formatted diff content based on arguments."""
+        return self._load_diff(args)[1]
+
+    def _run_agent_review(self, args, parsed_files, diff_content) -> ReviewResult:
+        """Run the agent engine; degrade to the classic engine on failure.
+
+        Chain: agent -> classic (same model) -> static analysis. The classic
+        engine already falls back to static analysis when the model is down.
+        """
+        self.engine_used = "agent"
+        if not parsed_files:
+            return ReviewResult(
+                status="success", critical_issues=[], warnings=[], suggestions=[]
+            )
+
+        if args.base and args.head:
+            source = RepoSource.for_diff_mode("range", head=args.head)
+        else:
+            source = RepoSource.for_diff_mode(args.mode or "staged")
+        tools = AgentTools(self.config, source, self.parser, parsed_files)
+        agent = AgentReviewer(self.config, trace=self.trace, trace_llm=self.trace_llm)
+        result = agent.review(tools)
+        if result.status == "success":
+            return result
+
+        print(
+            f"Agent review failed ({result.status}): {result.raw_response}. "
+            "Falling back to the classic engine.",
+            file=sys.stderr,
+        )
+        self.engine_used = "agent->classic"
+        fallback = self.reviewer.review_diff(diff_content)
+        fallback.agent_stats = {
+            **(result.agent_stats or {}),
+            "fallback": "classic",
+            "fallback_reason": result.raw_response,
+        }
+        return fallback
 
     def _output_results(self, result: ReviewResult, args):
         """Output review results in specified format."""
 
         if args.format == "json":
-            output = self._format_json_output(result)
+            output = self._format_json_output(result, args)
             print(json.dumps(output, indent=2))
         else:
             output = self._format_text_output(result, args.verbose)
             print(output)
 
-    def _format_json_output(self, result: ReviewResult) -> Dict[str, Any]:
+    def _format_json_output(self, result: ReviewResult, args=None) -> Dict[str, Any]:
         """Format results as JSON."""
         return {
             "status": result.status,
@@ -289,7 +368,9 @@ Examples:
                 for cs in result.code_suggestions
             ],
             "fallback_used": result.fallback_used,
-            "exit_code": self._get_exit_code(result),
+            "engine": self.engine_used,
+            "agent_stats": result.agent_stats,
+            "exit_code": self._get_exit_code(result, args),
         }
 
     def _format_text_output(self, result: ReviewResult, verbose: bool = False) -> str:
@@ -354,6 +435,13 @@ Examples:
             lines.append(
                 f"   • Code Review Outcome: {outcome_icon} {result.review_outcome}"
             )
+            lines.append(f"   • Engine: {self.engine_used}")
+            stats = result.agent_stats
+            if stats and "steps" in stats:
+                lines.append(
+                    f"   • Agent: {stats['steps']} step(s), {stats['tool_calls']} "
+                    f"tool call(s), {stats['tokens']} tokens, {stats['duration_sec']}s"
+                )
             if result.fallback_used:
                 lines.append("   • Fallback Analysis: Yes")
             if result.total_chunks > 0:
@@ -397,19 +485,25 @@ Examples:
         return result
 
     def _get_exit_code(self, result: ReviewResult, args=None) -> int:
-        """Get appropriate exit code based on results."""
+        """Get exit code from results and the --fail-on policy.
+
+        With fail_on "none" (default) an advisory review always exits 0.
+        Otherwise: 5 skipped, 3 model unavailable, 1 failing findings,
+        2 non-failing warnings, 0 clean.
+        """
+        fail_on = getattr(args, "fail_on", None) or "none"
+        if fail_on == "none":
+            return 0
         if result.status == "skipped":
             return 5  # Review skipped due to token limit
         elif result.status == "model_unavailable":
-            return 3  # Model unavailable, allow commit with warning
-        elif result.critical_issues:
-            return 1  # Critical issues, block commit
-        elif result.warnings and (args and args.strict):
-            return 1  # Warnings in strict mode, block commit
+            return 3  # Model unavailable, static fallback used
+        elif result.critical_issues or (result.warnings and fail_on == "warnings"):
+            return 1
         elif result.warnings:
-            return 2  # Warnings, allow commit
+            return 2
         else:
-            return 0  # Success
+            return 0
 
 
 def main():

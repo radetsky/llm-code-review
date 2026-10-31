@@ -133,15 +133,8 @@ install_hook() {
 # Installed from: $SCRIPT_DIR
 
 source "$VENV_DIR/bin/activate"
-python "$SCRIPT_DIR/review.py" --mode staged
-
-exit_code=\$?
-if [ \$exit_code -eq 1 ]; then
-    echo ""
-    echo "Commit blocked due to critical issues."
-    echo "Fix the issues above or use 'git commit --no-verify' to skip."
-    exit 1
-fi
+# Advisory only: findings are printed, the commit is never blocked.
+python "$SCRIPT_DIR/review.py" --mode staged || echo "Code review did not complete; commit continues."
 
 exit 0
 EOF

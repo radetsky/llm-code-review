@@ -32,7 +32,11 @@ python review.py --mode unstaged            # Review unstaged changes
 python review.py --mode all                 # Review all changes from HEAD
 python review.py --base main --head feature # Review between branches
 python review.py --format json              # JSON output for CI/CD
-python review.py --strict                   # Block on warnings too
+python review.py --engine agent             # Agentic review (tools); default is classic
+python review.py --fail-on critical         # Exit 1 on critical issues (default: none, advisory)
+python review.py --fail-on warnings         # Exit 1 on warnings too (alias: --strict)
+python review.py --trace                    # Print agent steps / tool calls to stderr
+python review.py --trace-llm                # Print full LLM requests and responses to stderr
 python review.py --verbose                  # Verbose output
 python review.py --test-connection          # Test LLM API connectivity
 
@@ -65,17 +69,34 @@ config.py           Configuration management (review_config.json)
     |
     v
 static_analyzer.py  Fallback security analysis when LLM unavailable
+
+agent_core.py       Agent loop (engine "agent"): budgets, forced submit_review,
+    |               Qwen quirks, finding validation, tracing
+    v
+agent_tools.py      Read-only tools (read_file, grep, git_blame, ...)
+    |
+    v
+diff_parser.py      RepoSource: safe file access for index / worktree / git rev
 ```
+
+Engines: `classic` (single prompt, default) and `agent` (tool-calling loop).
+Degradation: agent -> classic (same model) -> static analysis.
 
 ## Exit Codes
 
-| Code | Meaning | Git Action |
-|------|---------|------------|
-| 0 | Success | Allow |
-| 1 | Critical issues | Block |
-| 2 | Warnings only | Allow |
-| 3 | Model unavailable | Allow (static fallback) |
-| 4 | Configuration error | Block |
+The review is advisory. With the default `--fail-on none` the exit code is 0
+whenever a review was produced (see `review_outcome` / `status` in the output).
+
+| Code | Meaning | `--fail-on none` (default) | `critical` / `warnings` |
+|------|---------|----------------------------|-------------------------|
+| 0 | Success | yes | yes |
+| 1 | Failing findings | never | critical (and warnings for `warnings`) |
+| 2 | Warnings only / usage error | usage error only | warnings with `critical`; usage error |
+| 3 | Model unavailable (static fallback) | never (0) | yes |
+| 4 | Configuration error | yes | yes |
+| 5 | Review skipped (token limit) | never (0) | yes |
+
+Git hooks (`hooks/pre-commit`, `hooks/pre-push`) never block: they always exit 0.
 
 ## Configuration
 
@@ -88,6 +109,7 @@ static_analyzer.py  Fallback security analysis when LLM unavailable
 - `LLM_MODEL` - Override model name (optional)
 - `LLM_TIMEOUT` - Request timeout in seconds (default: 180)
 - `LLM_MAX_TOKENS_PER_REQUEST` - Max tokens per review chunk (default: 4096)
+- `LLM_ENGINE` - `agent` or `classic` (CLI `--engine` wins; then `agent.enabled` in config)
 - `LLM_TOKEN_LIMIT_STRATEGY` - Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`)
 
 ### Current Setup

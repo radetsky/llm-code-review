@@ -76,6 +76,7 @@ class ReviewConfig:
         },
         "output": {"format": "text", "show_context": True, "max_context_lines": 10},
         "agent": {
+            "enabled": False,  # True makes the agent the default engine
             "max_tool_output_chars": 8000,
             "max_grep_matches": 50,
             "max_steps": 20,
@@ -229,6 +230,19 @@ class ReviewConfig:
 
         logger.debug("Using token limit strategy from config: %s", config_value)
         return config_value
+
+    def get_engine(self, cli_value: str | None = None) -> str:
+        """Resolve the review engine: CLI flag, then LLM_ENGINE, then config.
+
+        Returns "agent" or "classic". Raises ValueError for anything else.
+        """
+        value = cli_value or os.getenv("LLM_ENGINE")
+        if not value:
+            value = "agent" if self.get("agent.enabled", False) else "classic"
+        value = str(value).strip().lower()
+        if value not in ("agent", "classic"):
+            raise ValueError(f"Unsupported engine '{value}'. Use 'agent' or 'classic'.")
+        return value
 
     def get_code_suggestions_enabled(self) -> bool:
         """Check if code suggestions are enabled. Environment variable takes precedence."""
