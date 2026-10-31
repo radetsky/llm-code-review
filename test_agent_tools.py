@@ -1,5 +1,6 @@
 """Tests for the read-only agent tools."""
 
+import os
 import subprocess
 
 import pytest
@@ -126,11 +127,11 @@ class TestReadFile:
             "read_file", {"path": "app.py", "start_line": 4, "end_line": 2}
         )
 
-    def test_range_past_eof_is_empty(self, tools):
+    def test_range_past_eof(self, tools):
         out = tools.call(
             "read_file", {"path": "app.py", "start_line": 99, "end_line": 100}
         )
-        assert out == "(empty)"
+        assert out == "(no lines in range; the file has 6 lines)"
 
     def test_missing_file(self, tools):
         assert tools.call("read_file", {"path": "nope.py"}) == "Error: file not found"
@@ -140,10 +141,74 @@ class TestReadFile:
         assert tools.call("read_file", {"path": "../x"}).startswith("Error:")
         assert tools.call("read_file", {"path": "/etc/passwd"}).startswith("Error:")
 
-    def test_large_file_is_truncated(self, tools):
+    def test_large_file_returns_a_window_with_a_hint(self, tools):
         out = tools.call("read_file", {"path": "big.py"})
-        assert "[output truncated" in out
-        assert len(out) < tools.max_chars + 200
+        lines = out.split("\n")
+        assert lines[0] == "1: x0 = 0" and lines[299] == "300: x299 = 299"
+        assert lines[-1].startswith("[showing lines 1-300 of 5000;")
+        assert "[output truncated" not in out
+
+    def test_window_size_from_config(self, tools):
+        tools.config.config["agent"]["read_default_lines"] = 10
+        out = tools.call("read_file", {"path": "big.py"})
+        assert out.split("\n")[9] == "10: x9 = 9"
+        assert "[showing lines 1-10 of 5000;" in out
+
+    def test_window_starts_at_start_line(self, tools):
+        out = tools.call("read_file", {"path": "big.py", "start_line": 1000})
+        assert out.startswith("1000: x999 = 999")
+        assert "[showing lines 1000-1299 of 5000;" in out
+
+    def test_explicit_range_has_no_hint_and_ignores_window(self, tools):
+        tools.config.config["agent"]["read_default_lines"] = 10
+        out = tools.call(
+            "read_file", {"path": "big.py", "start_line": 1, "end_line": 50}
+        )
+        assert out.endswith("50: x49 = 49") and "[showing" not in out
+
+    def test_small_file_has_no_hint(self, tools):
+        assert "[showing" not in tools.call("read_file", {"path": "app.py"})
+
+    def test_window_exactly_file_size_has_no_hint(self, tools):
+        tools.config.config["agent"]["read_default_lines"] = 6
+        assert "[showing" not in tools.call("read_file", {"path": "app.py"})
+
+    def test_empty_file(self, tools, repo):
+        open(os.path.join(repo, "empty.py"), "w").close()
+        _git(repo, "add", "empty.py")
+        assert tools.call("read_file", {"path": "empty.py"}) == "(empty)"
+
+    def test_repeated_read_is_not_returned_twice(self, tools):
+        first = tools.call(
+            "read_file", {"path": "app.py", "start_line": 1, "end_line": 3}
+        )
+        again = tools.call(
+            "read_file", {"path": "app.py", "start_line": 1, "end_line": 3}
+        )
+        assert first.startswith("1: def foo")
+        assert again.startswith("Already returned earlier in this review")
+        assert 'read_file({"end_line": 3, "path": "app.py", "start_line": 1})' in again
+
+    def test_different_range_or_file_is_read_normally(self, tools):
+        tools.call("read_file", {"path": "app.py", "start_line": 1, "end_line": 3})
+        assert tools.call(
+            "read_file", {"path": "app.py", "start_line": 1, "end_line": 4}
+        ).startswith("1: def foo")
+        assert tools.call("read_file", {"path": "util.py"}).startswith("1: class")
+
+    def test_whole_file_read_twice_is_deduplicated(self, tools):
+        tools.call("read_file", {"path": "app.py"})
+        assert tools.call("read_file", {"path": "app.py"}).startswith(
+            "Already returned"
+        )
+        # An equivalent explicit range (cut at the end of the file) is also a repeat.
+        assert tools.call(
+            "read_file", {"path": "app.py", "start_line": 1, "end_line": 999}
+        ).startswith("Already returned")
+
+    def test_errors_are_not_remembered_as_reads(self, tools):
+        assert tools.call("read_file", {"path": "nope.py"}) == "Error: file not found"
+        assert tools.call("read_file", {"path": "nope.py"}) == "Error: file not found"
 
     def test_truncation_limit_from_config(self, tools):
         tools.config.config["agent"] = {"max_tool_output_chars": 50}
@@ -253,3 +318,64 @@ class TestHistory:
             "git_blame", {"path": "nope.py", "start_line": 1, "end_line": 2}
         )
         assert out == "Error: file not found"
+
+
+class TestConfigIsolation:
+    def test_instances_do_not_share_nested_defaults(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)  # This folder has no review_config.json.
+        first = ReviewConfig()
+        first.config["agent"]["read_default_lines"] = 7
+        first.config["output"]["max_context_lines"] = 99
+        second = ReviewConfig()
+        assert second.get("agent.read_default_lines") == 300
+        assert second.get("output.max_context_lines") == 10
+
+    def test_merged_config_does_not_share_nested_defaults(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "review_config.json").write_text('{"llm": {"model": "m"}}')
+        first = ReviewConfig()
+        first.config["agent"]["read_default_lines"] = 7
+        assert ReviewConfig().get("agent.read_default_lines") == 300
+        assert ReviewConfig.DEFAULT_CONFIG["agent"]["read_default_lines"] == 300
+
+
+class TestCallDeduplication:
+    def test_any_tool_is_deduplicated(self, tools):
+        for name, args in [
+            ("get_diff", {"path": "app.py"}),
+            ("grep", {"pattern": "foo"}),
+            ("find_files", {"pattern": "*.py"}),
+            ("find_definition", {"name": "foo"}),
+            ("git_log", {}),
+            ("list_changed_files", {}),
+        ]:
+            first = tools.call(name, args)
+            second = tools.call(name, args)
+            assert not first.startswith("Already returned"), name
+            assert second.startswith("Already returned earlier in this review"), name
+            assert name in second
+
+    def test_argument_order_does_not_matter(self, tools):
+        tools.call("git_blame", {"path": "util.py", "start_line": 1, "end_line": 2})
+        again = tools.call(
+            "git_blame", {"end_line": 2, "start_line": 1, "path": "util.py"}
+        )
+        assert again.startswith("Already returned")
+
+    def test_different_arguments_are_not_deduplicated(self, tools):
+        tools.call("grep", {"pattern": "foo"})
+        assert tools.call("grep", {"pattern": "bar"}) != tools.call(
+            "grep", {"pattern": "foo"}
+        )
+        assert not tools.call("grep", {"pattern": "return"}).startswith("Already")
+
+    def test_failed_calls_can_be_retried(self, tools, repo):
+        assert tools.call("read_file", {"path": "late.py"}) == "Error: file not found"
+        with open(os.path.join(repo, "late.py"), "w") as f:
+            f.write("x = 1\n")
+        _git(repo, "add", "late.py")
+        assert tools.call("read_file", {"path": "late.py"}).startswith("1: x = 1")
+
+    def test_summary_is_not_a_tool_call(self, tools):
+        assert "app.py (modified)" in tools.changed_files_summary()
+        assert tools.call("list_changed_files", {}).startswith("app.py (modified)")

@@ -20,12 +20,13 @@ from typing import Any
 import json5
 from openai import OpenAI, OpenAIError
 
-from agent_tools import AgentTools
+from agent_tools import DUPLICATE_PREFIX, AgentTools
 from review_core import CodeSuggestion, ReviewResult
 
 SUBMIT_TOOL = "submit_review"
 MAX_NUDGES = 2
 MAX_CALLS_PER_STEP = 4
+MAX_STALE_STEPS = 2  # Number of steps in a row that only repeat earlier calls.
 SEVERITIES = {
     "critical": "critical",
     "warning": "warning",
@@ -89,7 +90,14 @@ Rules:
 - Line numbers refer to the new version of the file and must point to a line shown in the diff.
 - Severity: critical = security flaw or definite bug; warning = likely bug or risky code; suggestion = improvement.
 - The review is advisory. Never mention blocking a commit or merge.
-- Prefer few precise findings over many uncertain ones. An empty findings list is a valid result."""
+- Prefer few precise findings over many uncertain ones. An empty findings list is a valid result.
+
+Working efficiently (every step re-sends the whole conversation, so steps are expensive):
+- Call get_diff for each changed file first. Request independent tools together in one message (up to 4).
+- To check code outside the diff, locate it with grep or find_definition, then read a narrow range (about 20-80 lines) with read_file. Do not read whole files.
+- Never read a range you have already seen; earlier tool results stay in the conversation.
+- Investigate only concrete suspicions. When each one is confirmed or dismissed, call submit_review. Do not explore for completeness.
+- Aim to finish within 8 steps."""
 
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 FENCE_RE = re.compile(r"^```[A-Za-z0-9_+-]*\s*\n(.*?)\n?```\s*$", re.DOTALL)
@@ -295,6 +303,7 @@ class AgentReviewer:
             "tool_calls": 0,
             "invalid_tool_calls": 0,
             "ignored_tool_calls": 0,
+            "duplicate_tool_calls": 0,
             "forced_submit": None,
             "dropped_findings": 0,
             "duration_sec": 0.0,
@@ -307,13 +316,14 @@ class AgentReviewer:
                 "role": "user",
                 "content": (
                     "Review the following change. Changed files:\n"
-                    f"{tools.call('list_changed_files', {})}\n\n"
+                    f"{tools.changed_files_summary()}\n\n"
                     "Inspect the diffs with get_diff, verify suspicious code with the "
                     "other tools, then call submit_review."
                 ),
             },
         ]
         nudges = 0
+        stale_steps = 0
 
         def finish(result: ReviewResult) -> ReviewResult:
             stats["duration_sec"] = round(time.monotonic() - started, 2)
@@ -335,6 +345,8 @@ class AgentReviewer:
                     reason = "wall_timeout"
                 elif nudges > MAX_NUDGES:
                     reason = "no_tool_calls"
+                elif stale_steps >= MAX_STALE_STEPS:
+                    reason = "repeated_calls"
                 if reason:
                     return finish(
                         self._force_submit(
@@ -404,7 +416,11 @@ class AgentReviewer:
                         f"tokens used: {stats['tokens']}"
                     )
                     outputs.append(output)
+                    if output.startswith(DUPLICATE_PREFIX):
+                        stats["duplicate_tool_calls"] += 1
 
+                all_repeats = all(o.startswith(DUPLICATE_PREFIX) for o in outputs)
+                stale_steps = stale_steps + 1 if all_repeats else 0
                 if ignored:
                     outputs[-1] += (
                         f"\n[{ignored} further tool call(s) in this message were "

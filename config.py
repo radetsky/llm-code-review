@@ -2,6 +2,7 @@
 Configuration management for LLM code review system.
 """
 
+import copy
 import os
 import json
 import logging
@@ -79,6 +80,7 @@ class ReviewConfig:
             "enabled": False,  # True makes the agent the default engine
             "max_tool_output_chars": 32000,
             "max_grep_matches": 50,
+            "read_default_lines": 300,
             "max_steps": 20,
             "max_total_tokens": 1000000,
             "wall_timeout_sec": 300,
@@ -107,13 +109,13 @@ class ReviewConfig:
                 logger.warning("Could not load config file %s: %s", self.config_file, e)
                 logger.info("Using default configuration")
 
-        return self.DEFAULT_CONFIG.copy()
+        return copy.deepcopy(self.DEFAULT_CONFIG)
 
     def _merge_configs(
         self, default: Dict[str, Any], user: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Recursively merge user config with defaults."""
-        result = default.copy()
+        result = copy.deepcopy(default)
 
         for key, value in user.items():
             if (

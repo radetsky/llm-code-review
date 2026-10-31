@@ -118,7 +118,7 @@ Git hooks (`hooks/pre-commit`, `hooks/pre-push`) never block: they always exit 0
 
 ## Code Conventions
 
-- **All code comments must be in English**
-- Communication with users can be in Ukrainian
+- **All code, comments, docstrings and documentation must be in English, written in ASD-STE100 Simplified Technical English** (short sentences, active voice, simple present tense, one term for one meaning, no idioms). Apply this to all new and changed text.
+- Always communicate with the user in Ukrainian
 - Uses fish shell for environment configuration
 - Code formatted with `ruff format` and linted with `ruff check`

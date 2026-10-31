@@ -133,6 +133,23 @@ class TestHelpers:
         assert clean_suggested_code("x = 1\n\n", 5) == "x = 1"
 
 
+class TestPrompt:
+    def test_efficiency_rules_are_present(self):
+        prompt = agent_core.DEFAULT_SYSTEM_PROMPT
+        for phrase in (
+            "Do not read whole files",
+            "Never read a range you have already seen",
+            "Aim to finish within 8 steps",
+            "up to 4",
+        ):
+            assert phrase in prompt
+
+    def test_prompt_never_talks_about_blocking(self):
+        assert "block" not in agent_core.DEFAULT_SYSTEM_PROMPT.lower().replace(
+            "never mention blocking", ""
+        )
+
+
 # -- loop ------------------------------------------------------------------
 
 
@@ -419,6 +436,53 @@ class TestBudgets:
         ]
         result, _ = run(tools, script)
         assert result.status == "error"
+
+
+class TestRepeatedCalls:
+    def test_repeating_the_same_call_ends_the_review(self, tools):
+        same = lambda i: reply(
+            calls=[tool_call("get_diff", {"path": "app.py"}, f"c{i}")]
+        )
+        script = [same(i) for i in range(4)] + [submit([])]
+        result, client = run(tools, script)
+        # Step 1 is a real call. Steps 2 and 3 repeat it. Then the review must end.
+        assert result.agent_stats["forced_submit"] == "repeated_calls"
+        assert result.agent_stats["steps"] == 3
+        assert result.agent_stats["duplicate_tool_calls"] == 2
+        assert len(client.requests) == 4
+        repeat = client.requests[2]["messages"][-1]["content"]
+        assert repeat.startswith("Already returned earlier in this review")
+
+    def test_progress_resets_the_counter(self, tools):
+        script = [
+            reply(calls=[tool_call("get_diff", {"path": "app.py"}, "a")]),
+            reply(
+                calls=[tool_call("get_diff", {"path": "app.py"}, "b")]
+            ),  # repeated call
+            reply(calls=[tool_call("grep", {"pattern": "foo"}, "c")]),  # new call
+            reply(
+                calls=[tool_call("get_diff", {"path": "app.py"}, "d")]
+            ),  # repeated call
+            submit([]),
+        ]
+        result, _ = run(tools, script)
+        assert result.agent_stats["forced_submit"] is None
+        assert result.agent_stats["duplicate_tool_calls"] == 2
+
+    def test_mixed_batch_counts_as_progress(self, tools):
+        script = [
+            reply(calls=[tool_call("get_diff", {"path": "app.py"}, "a")]),
+            reply(
+                calls=[
+                    tool_call("get_diff", {"path": "app.py"}, "b"),
+                    tool_call("grep", {"pattern": "bar"}, "c"),
+                ]
+            ),
+            reply(calls=[tool_call("get_diff", {"path": "app.py"}, "d")]),
+            submit([]),
+        ]
+        result, _ = run(tools, script)
+        assert result.agent_stats["forced_submit"] is None
 
 
 class TestFindingValidation:

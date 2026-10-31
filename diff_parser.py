@@ -63,6 +63,8 @@ class DiffParser:
         current_hunk = None
         old_line_num = 0
         new_line_num = 0
+        old_left = 0  # Old-side lines that the current hunk still needs.
+        new_left = 0  # New-side lines that the current hunk still needs.
 
         lines = diff_text.split("\n")
         i = 0
@@ -73,7 +75,12 @@ class DiffParser:
             # File header
             if line.startswith("diff --git"):
                 if current_file:
+                    # Add the last hunk to the file that owns it.
+                    if current_hunk:
+                        current_file["hunks"].append(current_hunk)
                     files.append(current_file)
+                current_hunk = None
+                old_left = new_left = 0
 
                 # Extract file paths
                 match = re.search(r"b/(.+)$", line)
@@ -94,9 +101,12 @@ class DiffParser:
                 current_file["type"] = "renamed"
 
             # File path lines
-            elif line.startswith("---"):
+            # In a hunk, a line that starts with "---" or "+++" can be content
+            # (a removed "--" or an added "++"). It is a header only after the
+            # hunk counts reach zero.
+            elif line.startswith("---") and not (current_hunk and old_left > 0):
                 pass  # Source file
-            elif line.startswith("+++"):
+            elif line.startswith("+++") and not (current_hunk and new_left > 0):
                 # Target file - extract actual path
                 match = re.search(r"b/(.+)$", line)
                 if match and current_file:
@@ -117,6 +127,8 @@ class DiffParser:
 
                     old_line_num = old_start
                     new_line_num = new_start
+                    old_left = old_count
+                    new_left = new_count
 
                     current_hunk = {
                         "old_start": old_start,
@@ -143,18 +155,22 @@ class DiffParser:
                         current_hunk["context_after"].append(entry)
                     old_line_num += 1
                     new_line_num += 1
+                    old_left -= 1
+                    new_left -= 1
                 elif line.startswith("-"):
                     # Removed line — only in old file
                     current_hunk["removed_lines"].append(
                         {"line": old_line_num, "content": line[1:]}
                     )
                     old_line_num += 1
+                    old_left -= 1
                 elif line.startswith("+"):
                     # Added line — only in new file
                     current_hunk["added_lines"].append(
                         {"line": new_line_num, "content": line[1:]}
                     )
                     new_line_num += 1
+                    new_left -= 1
 
             i += 1
 

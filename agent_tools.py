@@ -6,6 +6,7 @@ raise: failures are returned as "Error: ..." so the model can recover.
 No shell is used; all repository access goes through RepoSource.
 """
 
+import json
 import re
 from collections.abc import Callable
 from typing import Any
@@ -15,6 +16,10 @@ from diff_parser import DiffParser, RepoAccessError, RepoSource
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MAX_LINE_CHARS = 300
 MAX_FIND_RESULTS = 100
+DUPLICATE_PREFIX = "Already returned earlier in this review"
+SOURCE_TRUNCATED = (
+    "\n[truncated]"  # Marker that RepoSource.read adds when it cuts the text.
+)
 
 
 def _fn(name: str, description: str, properties: dict, required: list[str]) -> dict:
@@ -47,7 +52,9 @@ TOOL_SPECS: list[dict] = [
     ),
     _fn(
         "read_file",
-        "Read a file (optionally a line range). Lines are prefixed with numbers.",
+        "Read a file. Lines are prefixed with numbers. Without end_line only a "
+        "limited window of lines is returned, so pass start_line/end_line and "
+        "prefer narrow ranges (20-80 lines).",
         {
             "path": {"type": "string"},
             "start_line": {"type": "integer", "description": "1-based, inclusive"},
@@ -119,6 +126,8 @@ class AgentTools:
         self.source = source
         self.parser = parser
         self.parsed_files = parsed_files
+        self._seen_reads: set[tuple[str, int, int]] = set()
+        self._seen_calls: set[tuple[str, str]] = set()
         self._handlers: dict[str, Callable[[dict], str]] = {
             "list_changed_files": self._list_changed_files,
             "get_diff": self._get_diff,
@@ -139,6 +148,10 @@ class AgentTools:
     def max_chars(self) -> int:
         return int(self.config.get("agent.max_tool_output_chars", 32000))
 
+    def changed_files_summary(self) -> str:
+        """Return the changed files with line counts. This is not a tool call."""
+        return self._list_changed_files({})
+
     def call(self, name: str, arguments: Any) -> str:
         """Run a tool. Always returns a string, never raises."""
         handler = self._handlers.get(name)
@@ -149,8 +162,17 @@ class AgentTools:
             arguments = {}
         if not isinstance(arguments, dict):
             return "Error: tool arguments must be a JSON object"
+        key = (name, json.dumps(arguments, sort_keys=True, default=str))
+        if key in self._seen_calls:
+            shown = json.dumps(arguments, ensure_ascii=False, sort_keys=True)
+            return (
+                f"{DUPLICATE_PREFIX}: {name}({shown}). "
+                "Use that result; do not repeat the call."
+            )
         try:
-            return self._truncate(handler(arguments))
+            output = self._truncate(handler(arguments))
+            self._seen_calls.add(key)  # Remember only the calls that succeed.
+            return output
         except ToolError as e:
             return f"Error: {e}"
         except RepoAccessError as e:
@@ -235,17 +257,45 @@ class AgentTools:
             raise ToolError("start_line must be >= 1")
         if end is not None and end < (start or 1):
             raise ToolError("end_line must be >= start_line")
-        text = self.source.read(path, start=start, end=end)
-        if text == "":
-            return "(empty)"
-        first = start or 1
+
+        text = self.source.read(path)
+        source_truncated = text.endswith(SOURCE_TRUNCATED)
+        if source_truncated:
+            text = text[: -len(SOURCE_TRUNCATED)]
         lines = text.split("\n")
-        # Keep the truncation marker out of the numbering.
-        marker = ""
-        if lines and lines[-1] == "[truncated]":
-            marker = lines.pop()
-        numbered = "\n".join(f"{first + i}: {line}" for i, line in enumerate(lines))
-        return f"{numbered}\n{marker}" if marker else numbered
+        if lines and lines[-1] == "":  # Remove the empty item after the last newline.
+            lines.pop()
+        total = len(lines)
+        if total == 0:
+            return "(empty)"
+
+        first = start or 1
+        if first > total:
+            return f"(no lines in range; the file has {total} lines)"
+        window = int(self.config.get("agent.read_default_lines", 300))
+        last = min(end if end is not None else first + window - 1, total)
+
+        key = (path, first, last)
+        if key in self._seen_reads:
+            return (
+                f"{DUPLICATE_PREFIX}: {path} lines {first}-{last}. "
+                "Use that result instead of reading it again."
+            )
+        self._seen_reads.add(key)
+
+        numbered = "\n".join(
+            f"{first + i}: {line}" for i, line in enumerate(lines[first - 1 : last])
+        )
+        if end is None and last < total:
+            numbered += (
+                f"\n[showing lines {first}-{last} of {total}; call read_file "
+                "with start_line/end_line to see other parts]"
+            )
+        elif last == total and source_truncated:
+            numbered += (
+                "\n[file is larger than the read limit; the rest is not available]"
+            )
+        return numbered
 
     def _grep(self, args: dict) -> str:
         pattern = self._str_arg(args, "pattern")
