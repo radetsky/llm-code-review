@@ -23,9 +23,9 @@
 - [x] Тести на temp-репо (`test_repo_source.py`): index / worktree / rev, захист шляхів, deny-list
 
 ## Фаза 2 — Інструменти (`agent_tools.py`)
-- [ ] `list_changed_files`, `get_diff`, `read_file`, `grep`, `find_files`, `find_definition`, `git_log`, `git_blame`
-- [ ] Обрізання виводу (`max_tool_output_chars`), без shell, `git grep -e <pattern>`
-- [ ] Тести кожного інструмента (порожній результат, великий файл)
+- [x] `list_changed_files`, `get_diff`, `read_file`, `grep`, `find_files`, `find_definition`, `git_log`, `git_blame`
+- [x] Обрізання виводу (`max_tool_output_chars`), без shell, `git grep -e <pattern>`
+- [x] Тести кожного інструмента (`test_agent_tools.py`) (порожній результат, великий файл)
 
 ## Фаза 3 — Цикл агента (`agent_core.py`)
 - [ ] Цикл, бюджети (`max_steps`, `max_total_tokens`, `wall_timeout_sec`), примусовий `submit_review`

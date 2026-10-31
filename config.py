@@ -75,6 +75,10 @@ class ReviewConfig:
             ],
         },
         "output": {"format": "text", "show_context": True, "max_context_lines": 10},
+        "agent": {
+            "max_tool_output_chars": 8000,
+            "max_grep_matches": 50,
+        },
         "fallback": {
             "enable_static_analysis": True,
             "allow_commit_on_unavailable": True,

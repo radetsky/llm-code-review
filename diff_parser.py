@@ -523,3 +523,45 @@ class RepoSource:
             if len(results) >= max_matches:
                 break
         return results
+
+    def _history_ref(self) -> str:
+        """Revision used for history lookups (HEAD unless reviewing a rev)."""
+        return self.rev if self.mode == "rev" else "HEAD"
+
+    def log(self, path: str = "", max_count: int = 20) -> list[str]:
+        """Return one-line commit summaries touching a path (or the whole repo)."""
+        rel = self._normalize(path)
+        count = max(1, min(int(max_count), 50))
+        args = [
+            "log",
+            f"-n{count}",
+            "--date=short",
+            "--pretty=format:%h %ad %an: %s",
+            self._history_ref(),
+            "--",
+        ]
+        if rel:
+            args.append(rel)
+        out = self._run(args)
+        return [line for line in out.split("\n") if line]
+
+    def blame(self, path: str, start: int, end: int, max_lines: int = 200) -> str:
+        """Return ``git blame`` output for a 1-based inclusive line range.
+
+        Staged (index) reviews are blamed against HEAD, so uncommitted lines
+        are only reported as such in worktree mode.
+        """
+        rel = self._normalize(path)
+        if not rel:
+            raise RepoAccessError("A file path is required")
+        if start < 1 or end < start:
+            raise ValueError("Invalid line range")
+        end = min(end, start + max_lines - 1)
+        # Reuse read() to enforce symlink/binary/deny checks and existence.
+        self.read(rel, start=start, end=end)
+
+        args = ["blame", "-w", "--date=short", "-L", f"{start},{end}"]
+        if self.mode != "worktree":
+            args.append(self._history_ref())
+        args += ["--", rel]
+        return self._run(args)
