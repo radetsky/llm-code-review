@@ -17,7 +17,7 @@ Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++, Go
 ## Common Commands
 
 ```bash
-# Activate virtual environment
+# Activate virtual environment (Python 3.11-3.13; 3.15 breaks pydantic-core build)
 source .python-venv/bin/activate.fish
 
 # Load API key (fish shell)
@@ -91,8 +91,8 @@ static_analyzer.py  Fallback security analysis when LLM unavailable
 - `LLM_TOKEN_LIMIT_STRATEGY` - Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`)
 
 ### Current Setup
-- Model: `anthropic/claude-sonnet-4`
-- Base URL: `https://api.opencode.ai/v1`
+- Model: `qwen3.8-27b` (corporate, SGLang, 128k context, thinking disabled via `llm.extra_body`)
+- Base URL: set via `LLM_BASE_URL` (not stored in the repo)
 
 ## Code Conventions
 

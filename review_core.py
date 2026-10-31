@@ -3,6 +3,7 @@ Core LLM integration for code review system.
 Based on existing hello_llm.py structure.
 """
 
+import json
 import re
 import time
 import random
@@ -522,6 +523,7 @@ Rules for code suggestions:
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,  # Low temperature for consistent analysis
+                extra_body=self.config.get_extra_body(),
             )
         except OpenAIError as e:
             self._trace_print(f"LLM Query failed: {e}")
@@ -740,6 +742,7 @@ Rules for code suggestions:
                     {"role": "user", "content": "Test connection. Respond with 'OK'."}
                 ],
                 max_tokens=10,
+                extra_body=self.config.get_extra_body(),
             )
 
             # Handle non-standard API responses
@@ -755,4 +758,38 @@ Rules for code suggestions:
             return success
         except Exception as e:
             self.logger.error(f"Connection test failed: {e}")
+            return False
+
+    def test_tools(self) -> bool:
+        """Check that the model returns a valid tool call."""
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                        "required": ["path"],
+                    },
+                },
+            }
+        ]
+        try:
+            response = self._get_client().chat.completions.create(
+                model=self.config.get_model(),
+                messages=[
+                    {"role": "user", "content": "Use the tool to read file a.py"}
+                ],
+                tools=tools,
+                extra_body=self.config.get_extra_body(),
+            )
+            tool_calls = response.choices[0].message.tool_calls or []
+            call = tool_calls[0].function
+            success = call.name == "read_file" and "path" in json.loads(call.arguments)
+            self._trace_print(f"Test tools: success={success}")
+            return success
+        except Exception as e:
+            self.logger.error(f"Tool calling test failed: {e}")
             return False

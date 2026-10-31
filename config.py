@@ -239,6 +239,10 @@ class ReviewConfig:
         logger.debug("Using chars_per_token: %d", config_value)
         return config_value
 
+    def get_extra_body(self) -> Optional[Dict[str, Any]]:
+        """Get extra request body fields for the LLM API (e.g. chat_template_kwargs)."""
+        return self.get("llm.extra_body") or None
+
     def get_timeout(self) -> int:
         """Get LLM request timeout in seconds. Environment variable takes precedence."""
         env_value = os.getenv("LLM_TIMEOUT")

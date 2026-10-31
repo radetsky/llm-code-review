@@ -50,24 +50,33 @@ class ReviewCLI:
         self.reviewer.trace_llm = self.trace_llm
 
         # Handle mutually exclusive --offline and --test-connection
-        if parsed_args.offline and parsed_args.test_connection:
+        run_checks = parsed_args.test_connection or parsed_args.test_tools
+        if parsed_args.offline and run_checks:
             print(
-                "Error: --offline and --test-connection are mutually exclusive.",
+                "Error: --offline cannot be combined with --test-connection or --test-tools.",
                 file=sys.stderr,
             )
             return 4
 
-        # Handle test-connection before validation
-        if parsed_args.test_connection:
+        # Handle LLM checks before validation
+        if run_checks:
             if not self._validate_config():
                 return 4  # Configuration error
 
-            if self.reviewer.test_connection():
-                print("✅ Connection to LLM successful")
-                return 0
-            else:
-                print("❌ Connection to LLM failed")
-                return 1
+            checks = []
+            if parsed_args.test_connection:
+                checks.append(("Connection to LLM", self.reviewer.test_connection))
+            if parsed_args.test_tools:
+                checks.append(("Tool calling", self.reviewer.test_tools))
+
+            failed = False
+            for label, check in checks:
+                ok = check()
+                print(
+                    f"{'✅' if ok else '❌'} {label} {'successful' if ok else 'failed'}"
+                )
+                failed = failed or not ok
+            return 1 if failed else 0
 
         # Validate configuration
         if parsed_args.offline:
@@ -187,6 +196,11 @@ Examples:
         # Utility commands
         parser.add_argument(
             "--test-connection", action="store_true", help="Test connection to LLM API"
+        )
+        parser.add_argument(
+            "--test-tools",
+            action="store_true",
+            help="Test that the LLM supports tool calling",
         )
         parser.add_argument(
             "--config-file",
