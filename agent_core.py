@@ -284,7 +284,7 @@ class AgentReviewer:
         """Run the agent. Never raises for model/transport failures."""
         cfg = self.config
         max_steps = int(cfg.get("agent.max_steps", 20))
-        max_tokens = int(cfg.get("agent.max_total_tokens", 300000))
+        max_tokens = int(cfg.get("agent.max_total_tokens", 1000000))
         wall = float(cfg.get("agent.wall_timeout_sec", 300))
         started = time.monotonic()
         self._printed = 0

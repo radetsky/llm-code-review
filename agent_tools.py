@@ -137,7 +137,7 @@ class AgentTools:
 
     @property
     def max_chars(self) -> int:
-        return int(self.config.get("agent.max_tool_output_chars", 8000))
+        return int(self.config.get("agent.max_tool_output_chars", 32000))
 
     def call(self, name: str, arguments: Any) -> str:
         """Run a tool. Always returns a string, never raises."""

@@ -77,10 +77,10 @@ class ReviewConfig:
         "output": {"format": "text", "show_context": True, "max_context_lines": 10},
         "agent": {
             "enabled": False,  # True makes the agent the default engine
-            "max_tool_output_chars": 8000,
+            "max_tool_output_chars": 32000,
             "max_grep_matches": 50,
             "max_steps": 20,
-            "max_total_tokens": 300000,
+            "max_total_tokens": 1000000,
             "wall_timeout_sec": 300,
         },
         "fallback": {
