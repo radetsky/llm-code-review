@@ -43,7 +43,7 @@
 - [x] Оновити таблицю exit-кодів у `CLAUDE.md` (інформаційна)
 
 ## Фаза 5 — Промпт
-- [ ] `prompts/agent_system.md` (закриває пункт з `TODO.md`): роль, правила, формат, без «block commit»
+- [x] Усі промпти винесено в `prompts/*.md` (`prompts.py`): `agent_system` (ASD-STE100, без згадки про блокування), `agent_task`, `agent_nudge`, `agent_budget_exhausted`, `classic_review`, `classic_code_suggestions`
 - [ ] Опційні блоки Django / Rust / Go, підтягнути `custom_*` правила
 - [ ] Тюнінг під Qwen: коротко, чіткий формат, 1–2 приклади
 

@@ -21,12 +21,15 @@ import json5
 from openai import OpenAI, OpenAIError
 
 from agent_tools import DUPLICATE_PREFIX, AgentTools
+from prompts import load_prompt, render
 from review_core import CodeSuggestion, ReviewResult
 
 SUBMIT_TOOL = "submit_review"
 MAX_NUDGES = 2
 MAX_CALLS_PER_STEP = 4
-MAX_STALE_STEPS = 2  # Number of steps in a row that only repeat earlier calls.
+MAX_STALE_STEPS = 2  # Number of steps in a row that mostly repeat earlier calls.
+BASE_STEP_TARGET = 4  # Steps for a change with no files.
+STEPS_PER_FILE = 2  # More steps for each changed file.
 SEVERITIES = {
     "critical": "critical",
     "warning": "warning",
@@ -81,23 +84,7 @@ SUBMIT_SPEC = {
     },
 }
 
-DEFAULT_SYSTEM_PROMPT = """You are a code reviewer. You review one git change.
-Use the tools to examine the change and the code around it. Then call submit_review one time.
-
-Rules:
-- Review only the changed lines. Use other files only to check a possible problem.
-- Report a problem only when you confirm it in the code. Do not give general advice.
-- Use line numbers of the new version of the file. Each line number must show in the diff.
-- Use these severity levels. critical: a security flaw or a sure bug. warning: a probable bug or risky code. suggestion: an improvement.
-- The review is advisory. Do not say that a commit or a merge is blocked.
-- Report few findings that you are sure about. Do not report doubtful findings. An empty findings list is a correct result.
-
-Work efficiently. Each step sends the full conversation again, and this costs tokens.
-- Call get_diff for each changed file first. Put independent tool calls in one message. The maximum is 4 calls.
-- To check code outside the diff, find it with grep or find_definition. Then read 20 to 80 lines with read_file. Do not read a whole file.
-- Do not read a range two times. The results of earlier calls stay in the conversation.
-- Investigate only specific suspicions. When you confirm or reject each suspicion, call submit_review. Do not look for more.
-- Try to finish in 8 steps or fewer."""
+DEFAULT_SYSTEM_PROMPT = load_prompt("agent_system")
 
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 FENCE_RE = re.compile(r"^```[A-Za-z0-9_+-]*\s*\n(.*?)\n?```\s*$", re.DOTALL)
@@ -176,7 +163,7 @@ class AgentReviewer:
         self.client = client
         self.trace = trace
         self.trace_llm = trace_llm
-        self.system_prompt = DEFAULT_SYSTEM_PROMPT
+        self.system_prompt = load_prompt("agent_system")
         self._printed = 0  # messages already shown by trace_llm
 
     # -- setup -------------------------------------------------------------
@@ -310,15 +297,20 @@ class AgentReviewer:
             "stop_reason": None,
         }
         specs = tools.specs + [SUBMIT_SPEC]
+        # The step target grows with the size of the change, but it stays below max_steps.
+        step_target = min(
+            max(max_steps - 2, 1),
+            BASE_STEP_TARGET + STEPS_PER_FILE * len(tools.parsed_files),
+        )
+        stats["step_target"] = step_target
+        system_prompt = render(self.system_prompt, step_target=step_target)
         messages: list[dict] = [
-            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": (
-                    "Review this change. These files changed:\n"
-                    f"{tools.changed_files_summary()}\n\n"
-                    "Read each diff with get_diff. Use the other tools to check "
-                    "suspect code. Then call submit_review."
+                "content": render(
+                    load_prompt("agent_task"),
+                    changed_files=tools.changed_files_summary(),
                 ),
             },
         ]
@@ -369,7 +361,7 @@ class AgentReviewer:
                     messages.append(
                         {
                             "role": "user",
-                            "content": "Use a tool, or call submit_review with your findings.",
+                            "content": load_prompt("agent_nudge"),
                         }
                     )
                     continue
@@ -419,8 +411,9 @@ class AgentReviewer:
                     if output.startswith(DUPLICATE_PREFIX):
                         stats["duplicate_tool_calls"] += 1
 
-                all_repeats = all(o.startswith(DUPLICATE_PREFIX) for o in outputs)
-                stale_steps = stale_steps + 1 if all_repeats else 0
+                repeats = sum(o.startswith(DUPLICATE_PREFIX) for o in outputs)
+                is_stale = repeats * 2 > len(outputs)  # More than half are repeats.
+                stale_steps = stale_steps + 1 if is_stale else 0
                 if ignored:
                     outputs[-1] += (
                         f"\n[{ignored} tool call(s) did not run. The limit is "
@@ -511,10 +504,7 @@ class AgentReviewer:
         messages.append(
             {
                 "role": "user",
-                "content": (
-                    f"The budget is used up ({reason}). Call submit_review now. "
-                    "Include only the findings that you confirmed."
-                ),
+                "content": render(load_prompt("agent_budget_exhausted"), reason=reason),
             }
         )
         forced = {"type": "function", "function": {"name": SUBMIT_TOOL}}

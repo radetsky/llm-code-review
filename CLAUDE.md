@@ -79,6 +79,13 @@ agent_tools.py      Read-only tools (read_file, grep, git_blame, ...)
 diff_parser.py      RepoSource: safe file access for index / worktree / git rev
 ```
 
+Prompts: every text that tells the model what to do is a file in `prompts/`
+(`agent_system.md`, `agent_task.md`, `agent_nudge.md`, `agent_budget_exhausted.md`,
+`classic_review.md`, `classic_code_suggestions.md`). `prompts.py` loads them.
+Edit a file to change the prompt. Keep the placeholders, for example `{step_target}`.
+Agent prompts follow ASD-STE100. The tool descriptions and the notes in tool
+results are still in `agent_tools.py` and `agent_core.py`.
+
 Engines: `classic` (single prompt, default) and `agent` (tool-calling loop).
 Degradation: agent -> classic (same model) -> static analysis.
 

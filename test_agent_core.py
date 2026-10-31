@@ -140,21 +140,48 @@ class TestPrompt:
         for phrase in (
             "Do not read a whole file",
             "Do not read a range two times",
-            "8 steps or fewer",
+            "{step_target} steps or fewer",
             "The maximum is 4 calls",
         ):
             assert phrase in prompt
 
-    def test_review_is_advisory(self):
-        prompt = agent_core.DEFAULT_SYSTEM_PROMPT
-        assert "The review is advisory" in prompt
-        assert "block commit" not in prompt.lower()
+    def test_prompt_does_not_mention_blocking(self):
+        prompt = agent_core.DEFAULT_SYSTEM_PROMPT.lower()
+        for word in ("block", "merge", "advisory"):
+            assert word not in prompt
 
     def test_prompt_sentences_are_short(self):
         """ASD-STE100: a sentence has 25 words or fewer (20 for a procedure)."""
         text = agent_core.DEFAULT_SYSTEM_PROMPT
         for sentence in re.split(r"(?<=[.:])\s+|\n+", text):
             assert len(sentence.split()) <= 25, sentence
+
+
+class TestStepTarget:
+    def system_prompt(self, tools, max_steps=20):
+        tools.config.config["agent"]["max_steps"] = max_steps
+        _, client = run(tools, [submit([])])
+        return client.requests[0]["messages"][0]["content"]
+
+    def test_target_depends_on_number_of_files(self, tools):
+        # The fixture change has one file: 4 + 2 * 1 steps.
+        assert "Try to finish in 6 steps or fewer." in self.system_prompt(tools)
+
+    def test_target_grows_with_more_files(self, tools):
+        tools.parsed_files = tools.parsed_files * 5
+        assert "Try to finish in 14 steps or fewer." in self.system_prompt(tools)
+
+    def test_target_stays_below_max_steps(self, tools):
+        tools.parsed_files = tools.parsed_files * 50
+        assert "Try to finish in 18 steps or fewer." in self.system_prompt(tools)
+        assert "Try to finish in 8 steps or fewer." in self.system_prompt(
+            tools, max_steps=10
+        )
+
+    def test_target_is_in_stats_and_placeholder_is_replaced(self, tools):
+        result, client = run(tools, [submit([])])
+        assert result.agent_stats["step_target"] == 6
+        assert "{step_target}" not in client.requests[0]["messages"][0]["content"]
 
 
 # -- loop ------------------------------------------------------------------
@@ -475,6 +502,31 @@ class TestRepeatedCalls:
         result, _ = run(tools, script)
         assert result.agent_stats["forced_submit"] is None
         assert result.agent_stats["duplicate_tool_calls"] == 2
+
+    def test_batches_with_mostly_repeats_are_stale(self, tools):
+        def padded(i):
+            # Three repeated calls and one new call in each message.
+            return reply(
+                calls=[
+                    tool_call("get_diff", {"path": "app.py"}, f"a{i}"),
+                    tool_call("list_changed_files", {}, f"b{i}"),
+                    tool_call("find_files", {"pattern": "*.py"}, f"c{i}"),
+                    tool_call("grep", {"pattern": f"new{i}"}, f"d{i}"),
+                ]
+            )
+
+        first = reply(
+            calls=[
+                tool_call("get_diff", {"path": "app.py"}, "x1"),
+                tool_call("list_changed_files", {}, "x2"),
+                tool_call("find_files", {"pattern": "*.py"}, "x3"),
+            ]
+        )
+        script = [first, padded(1), padded(2), submit([])]
+        result, _ = run(tools, script)
+        assert result.agent_stats["forced_submit"] == "repeated_calls"
+        assert result.agent_stats["steps"] == 3
+        assert result.agent_stats["duplicate_tool_calls"] == 6
 
     def test_mixed_batch_counts_as_progress(self, tools):
         script = [
