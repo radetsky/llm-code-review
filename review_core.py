@@ -40,6 +40,7 @@ class ReviewResult:
     chunks_reviewed: int = 0
     total_chunks: int = 0
     code_suggestions: List[CodeSuggestion] = field(default_factory=list)
+    agent_stats: Optional[dict] = None  # Filled by the agent engine only
 
     @property
     def review_outcome(self) -> str:

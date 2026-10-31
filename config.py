@@ -78,6 +78,9 @@ class ReviewConfig:
         "agent": {
             "max_tool_output_chars": 8000,
             "max_grep_matches": 50,
+            "max_steps": 20,
+            "max_total_tokens": 300000,
+            "wall_timeout_sec": 300,
         },
         "fallback": {
             "enable_static_analysis": True,

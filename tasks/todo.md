@@ -28,18 +28,18 @@
 - [x] Тести кожного інструмента (`test_agent_tools.py`) (порожній результат, великий файл)
 
 ## Фаза 3 — Цикл агента (`agent_core.py`)
-- [ ] Цикл, бюджети (`max_steps`, `max_total_tokens`, `wall_timeout_sec`), примусовий `submit_review`
-- [ ] Qwen: вирізати `<think>`, читати `reasoning_content`, терпимий JSON аргументів, без parallel tool calls
-- [ ] `submit_review` → `ReviewResult` / `CodeSuggestion`
-- [ ] Пост-валідація знахідок: файл і рядок є в diff, дедуплікація, чисті `suggested_code`
-- [ ] Тести з фейковим клієнтом (успіх, перевищення кроків, битий JSON, невідомий інструмент, модель без tool-calls)
+- [x] Цикл, бюджети (`max_steps`, `max_total_tokens`, `wall_timeout_sec`), примусовий `submit_review`
+- [x] Qwen: вирізати `<think>`, читати `reasoning_content`, терпимий JSON аргументів, без parallel tool calls
+- [x] `submit_review` → `ReviewResult` / `CodeSuggestion`
+- [x] Пост-валідація знахідок: файл і рядок є в diff, дедуплікація, чисті `suggested_code`
+- [x] Тести з фейковим клієнтом (успіх, перевищення кроків, битий JSON, невідомий інструмент, модель без tool-calls)
 - [ ] (3b, лише якщо фаза 0 покаже відсутність tool calling) текстовий протокол
 
 ## Фаза 4 — CLI
 - [ ] `--engine agent|classic` (env `LLM_ENGINE`, конфіг `agent.enabled`), стартово classic
 - [ ] `--fail-on none|critical|warnings`, дефолт `none`; `--strict` як аліас `warnings`
 - [ ] Хуки `pre-commit` / `pre-push` завжди `exit 0`
-- [ ] `--trace` друкує кроки агента
+- [x] (зроблено у фазі 3, `agent_core.py`) `--trace` друкує кроки агента; `--trace-llm` — повні запити/відповіді (CLI-прапори підключити у фазі 4)
 - [ ] Оновити таблицю exit-кодів у `CLAUDE.md` (інформаційна)
 
 ## Фаза 5 — Промпт
