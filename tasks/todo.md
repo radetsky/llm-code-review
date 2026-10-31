@@ -18,9 +18,9 @@
 - [ ] У фазі 7 оновити README, `.github/copilot-instructions.md`, `review_config_rust_example.json` (досі anthropic/opencode)
 
 ## Фаза 1 — `RepoSource`
-- [ ] Клас у `diff_parser.py`: `read` / `list` / `grep` для режимів index, worktree, git rev
-- [ ] Захист шляхів (`../`, symlinks), deny-list (`.env*`, `*.pem`, `id_rsa*`)
-- [ ] Тести на temp-репо: staged і range дають однаковий результат
+- [x] Клас у `diff_parser.py`: `read` / `list_dir` / `find_files` / `grep` для режимів index, worktree, git rev (`RepoSource.for_diff_mode`)
+- [x] Захист шляхів (`../`, symlinks), deny-list (`.env*`, `*.pem`, `id_rsa*`)
+- [x] Тести на temp-репо (`test_repo_source.py`): index / worktree / rev, захист шляхів, deny-list
 
 ## Фаза 2 — Інструменти (`agent_tools.py`)
 - [ ] `list_changed_files`, `get_diff`, `read_file`, `grep`, `find_files`, `find_definition`, `git_log`, `git_blame`

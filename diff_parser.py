@@ -2,6 +2,9 @@
 Git diff parser for extracting and structuring code changes.
 """
 
+import fnmatch
+import os
+import posixpath
 import re
 import subprocess
 from typing import List, Dict, Any, Optional
@@ -243,3 +246,280 @@ class DiffParser:
 
         files = [f.strip() for f in result.split("\n") if f.strip()]
         return [f for f in files if self.config.is_file_supported(f)]
+
+
+# Files the agent must never read, even if they are tracked by git.
+DENY_PATTERNS = (
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "id_rsa*",
+    "id_ed25519*",
+    "id_ecdsa*",
+    ".netrc",
+    ".npmrc",
+    ".pypirc",
+    "credentials*",
+)
+
+
+class RepoAccessError(Exception):
+    """Raised when a path is outside the repository or is denied."""
+
+
+class RepoSource:
+    """Read-only access to repository files for a given review mode.
+
+    Modes:
+        worktree - files on disk (unstaged / all-from-HEAD reviews)
+        index    - staged content (``git show :path``)
+        rev      - content at a git revision (``git show rev:path``)
+
+    Paths are always repository-relative. Absolute paths, ``..`` segments,
+    symlinks and deny-listed files are rejected.
+    """
+
+    def __init__(
+        self,
+        root: str | None = None,
+        mode: str = "worktree",
+        rev: str | None = None,
+        deny_patterns: tuple = DENY_PATTERNS,
+    ):
+        if mode not in ("worktree", "index", "rev"):
+            raise ValueError(f"Unsupported source mode: {mode}")
+        if mode == "rev" and not rev:
+            raise ValueError("rev is required for mode 'rev'")
+        if rev and rev.startswith("-"):
+            raise ValueError("Invalid git revision")
+        self.mode = mode
+        self.rev = rev
+        self.deny_patterns = deny_patterns
+        top = self._git(["rev-parse", "--show-toplevel"], root or ".").strip()
+        self.root = os.path.realpath(top)
+
+    @classmethod
+    def for_diff_mode(
+        cls, diff_mode: str, head: str | None = None, root: str | None = None
+    ) -> "RepoSource":
+        """Build a source matching the diff mode used by DiffParser."""
+        if diff_mode == "staged":
+            return cls(root, "index")
+        if diff_mode in ("unstaged", "all"):
+            return cls(root, "worktree")
+        if diff_mode == "range" and head:
+            return cls(root, "rev", rev=head)
+        raise ValueError(f"Unsupported diff mode: {diff_mode}")
+
+    # -- internals ---------------------------------------------------------
+
+    @staticmethod
+    def _git(args: list[str], cwd: str) -> str:
+        try:
+            result = subprocess.run(
+                ["git"] + args,
+                capture_output=True,
+                text=True,
+                errors="replace",
+                check=True,
+                cwd=cwd,
+            )
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Git command failed: {e.stderr.strip()}")
+        except FileNotFoundError:
+            raise RuntimeError("Git command not found")
+
+    def _run(self, args: list[str], ok_codes: tuple = (0,)) -> str:
+        result = subprocess.run(
+            ["git"] + args,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+            cwd=self.root,
+        )
+        if result.returncode not in ok_codes:
+            raise RuntimeError(f"Git command failed: {result.stderr.strip()}")
+        return result.stdout
+
+    def _is_denied(self, rel_path: str) -> bool:
+        parts = rel_path.split("/")
+        return any(
+            fnmatch.fnmatch(part, pattern)
+            for part in parts
+            for pattern in self.deny_patterns
+        )
+
+    def _normalize(self, path: str) -> str:
+        """Validate a repository-relative path and return it in POSIX form."""
+        if not isinstance(path, str) or "\x00" in path:
+            raise RepoAccessError("Invalid path")
+        if path in ("", "."):
+            return ""
+        if path.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", path):
+            raise RepoAccessError("Absolute paths are not allowed")
+        norm = posixpath.normpath(path.replace("\\", "/"))
+        if norm == ".." or norm.startswith("../"):
+            raise RepoAccessError("Path escapes the repository")
+        if norm == ".git" or norm.startswith(".git/"):
+            raise RepoAccessError("Access to .git is not allowed")
+        if self._is_denied(norm):
+            raise RepoAccessError("Access to this file is denied")
+        return norm
+
+    def _tree_ref(self) -> str:
+        return self.rev if self.mode == "rev" else ""
+
+    def _entry_mode(self, rel_path: str) -> str | None:
+        """Return git file mode (e.g. 100644, 120000) or None if absent."""
+        if self.mode == "index":
+            out = self._run(["ls-files", "-s", "--", rel_path])
+            return out.split()[0] if out.strip() else None
+        out = self._run(["ls-tree", self.rev, "--", rel_path])
+        return out.split()[0] if out.strip() else None
+
+    # -- public API --------------------------------------------------------
+
+    def read(
+        self,
+        path: str,
+        start: int | None = None,
+        end: int | None = None,
+        max_bytes: int = 200_000,
+    ) -> str:
+        """Return file text, optionally limited to 1-based inclusive lines."""
+        rel = self._normalize(path)
+        if not rel:
+            raise RepoAccessError("A file path is required")
+
+        if self.mode == "worktree":
+            full = os.path.join(self.root, rel)
+            real = os.path.realpath(full)
+            if os.path.islink(full) or not (
+                real == self.root or real.startswith(self.root + os.sep)
+            ):
+                raise RepoAccessError("Symlinks are not allowed")
+            # Reject symlinked parent directories as well.
+            if os.path.dirname(full) != os.path.dirname(real):
+                raise RepoAccessError("Symlinks are not allowed")
+            if not os.path.isfile(full):
+                raise FileNotFoundError(rel)
+            with open(full, "rb") as f:
+                raw = f.read(max_bytes + 1)
+        else:
+            entry = self._entry_mode(rel)
+            if entry is None:
+                raise FileNotFoundError(rel)
+            if entry == "120000":
+                raise RepoAccessError("Symlinks are not allowed")
+            if entry not in ("100644", "100755"):
+                raise RepoAccessError("Not a regular file")
+            spec = f":{rel}" if self.mode == "index" else f"{self.rev}:{rel}"
+            result = subprocess.run(
+                ["git", "show", spec],
+                capture_output=True,
+                check=False,
+                cwd=self.root,
+            )
+            if result.returncode != 0:
+                raise FileNotFoundError(rel)
+            raw = result.stdout[: max_bytes + 1]
+
+        if b"\x00" in raw[:8000]:
+            raise RepoAccessError("Binary file")
+        truncated = len(raw) > max_bytes
+        text = raw[:max_bytes].decode("utf-8", errors="replace")
+
+        if start is not None or end is not None:
+            lines = text.split("\n")
+            first = max((start or 1) - 1, 0)
+            last = end if end is not None else len(lines)
+            text = "\n".join(lines[first:last])
+        if truncated:
+            text += "\n[truncated]"
+        return text
+
+    def list_dir(self, path: str = "") -> list[str]:
+        """List tracked entries directly under a directory (dirs end with '/')."""
+        rel = self._normalize(path)
+        if self.mode == "worktree":
+            args = ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]
+        elif self.mode == "index":
+            args = ["ls-files", "-z"]
+        else:
+            args = ["ls-tree", "-r", "--name-only", "-z", self.rev]
+        names = [n for n in self._run(args).split("\x00") if n]
+
+        prefix = f"{rel}/" if rel else ""
+        entries = set()
+        for name in names:
+            if not name.startswith(prefix) or self._is_denied(name):
+                continue
+            head, sep, _ = name[len(prefix) :].partition("/")
+            entries.add(prefix + head + ("/" if sep else ""))
+        return sorted(entries)
+
+    def find_files(self, pattern: str, max_results: int = 200) -> list[str]:
+        """Find files whose path matches a glob pattern (fnmatch)."""
+        if self.mode == "worktree":
+            args = ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]
+        elif self.mode == "index":
+            args = ["ls-files", "-z"]
+        else:
+            args = ["ls-tree", "-r", "--name-only", "-z", self.rev]
+        names = [n for n in self._run(args).split("\x00") if n]
+        matches = [
+            n
+            for n in names
+            if not self._is_denied(n)
+            and (
+                fnmatch.fnmatch(n, pattern)
+                or fnmatch.fnmatch(posixpath.basename(n), pattern)
+            )
+        ]
+        return sorted(matches)[:max_results]
+
+    def grep(
+        self,
+        pattern: str,
+        path: str = "",
+        max_matches: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Search with ``git grep -E``. Returns dicts with path, line, text."""
+        if not pattern:
+            raise ValueError("pattern is required")
+        rel = self._normalize(path)
+
+        args = ["grep", "-n", "-I", "-E", "--no-color", "-z"]
+        if self.mode == "index":
+            args.append("--cached")
+        elif self.mode == "worktree":
+            args.append("--untracked")
+        args += ["-e", pattern]
+        if self.mode == "rev":
+            args.append(self.rev)
+        args += ["--", rel or "."]
+
+        # git grep exits with 1 when nothing matches.
+        out = self._run(args, ok_codes=(0, 1))
+        results: list[dict[str, Any]] = []
+        for record in out.split("\n"):
+            if not record:
+                continue
+            # With -z, fields are separated by NUL: [rev:]path NUL line NUL text
+            fields = record.split("\x00", 2)
+            if len(fields) != 3:
+                continue
+            file_path, line_no, text = fields
+            if self.mode == "rev" and file_path.startswith(f"{self.rev}:"):
+                file_path = file_path[len(self.rev) + 1 :]
+            if self._is_denied(file_path) or not line_no.isdigit():
+                continue
+            results.append({"path": file_path, "line": int(line_no), "text": text})
+            if len(results) >= max_matches:
+                break
+        return results
