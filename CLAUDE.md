@@ -81,7 +81,11 @@ diff_parser.py      RepoSource: safe file access for index / worktree / git rev
 
 Prompts: every text that tells the model what to do is a file in `prompts/`
 (`agent_system.md`, `agent_task.md`, `agent_nudge.md`, `agent_budget_exhausted.md`,
+`agent_project_rules.md`, `agent_lang_{django,go,rust}.md`, `rule_docstrings.md`,
 `classic_review.md`, `classic_code_suggestions.md`). `prompts.py` loads them.
+`agent_prompt.py` builds the agent system prompt: it adds the language checks
+(config `prompt.language_blocks`: `"auto"`, a list, or `[]`) and the project rules
+(`prompt.custom_*`, `prompt.additional_instructions`, `review.check_docstrings`).
 Edit a file to change the prompt. Keep the placeholders, for example `{step_target}`.
 Agent prompts follow ASD-STE100. The tool descriptions and the notes in tool
 results are still in `agent_tools.py` and `agent_core.py`.

@@ -1,6 +1,7 @@
 """Tests for the prompt files and the prompt loader."""
 
 import re
+import shutil
 
 import pytest
 
@@ -12,11 +13,25 @@ PROMPT_NAMES = [
     "agent_task",
     "agent_nudge",
     "agent_budget_exhausted",
+    "agent_project_rules",
+    "agent_lang_django",
+    "agent_lang_go",
+    "agent_lang_rust",
     "classic_review",
     "classic_code_suggestions",
+    "rule_docstrings",
 ]
 # ASD-STE100 applies to the text that we wrote for the agent.
-AGENT_PROMPTS = ["agent_system", "agent_task", "agent_nudge", "agent_budget_exhausted"]
+AGENT_PROMPTS = [
+    "agent_system",
+    "agent_task",
+    "agent_nudge",
+    "agent_budget_exhausted",
+    "agent_project_rules",
+    "agent_lang_django",
+    "agent_lang_go",
+    "agent_lang_rust",
+]
 
 
 class TestFiles:
@@ -49,12 +64,15 @@ class TestFiles:
     def test_agent_prompts_do_not_mention_blocking(self):
         for name in AGENT_PROMPTS:
             text = load_prompt(name).lower()
-            assert "block" not in text and "merge" not in text, name
+            # "unsafe block" and "blocking call" in the Rust checks are allowed.
+            pattern = r"\bmerge\b|\bblocked\b|block(ing)? (a |the )?(commit|merge|push)"
+            assert not re.search(pattern, text), name
 
 
 class TestPlaceholders:
     def test_agent_placeholders(self):
         assert "{step_target}" in load_prompt("agent_system")
+        assert "{project_context}" in load_prompt("agent_system")
         assert "{changed_files}" in load_prompt("agent_task")
         assert "{reason}" in load_prompt("agent_budget_exhausted")
 
@@ -84,7 +102,16 @@ class TestPlaceholders:
         assert text.endswith("Changes to review:\nD")
 
     def test_no_unexpected_placeholders_in_agent_prompts(self):
-        allowed = {"step_target", "changed_files", "reason"}
+        allowed = {
+            "step_target",
+            "changed_files",
+            "reason",
+            "project_context",
+            "critical_rules",
+            "warning_rules",
+            "suggestion_rules",
+            "additional_instructions",
+        }
         for name in AGENT_PROMPTS:
             assert set(re.findall(r"\{(\w+)\}", load_prompt(name))) <= allowed
 
@@ -141,7 +168,7 @@ class TestPromptsReachTheModel:
         monkeypatch.chdir(repo)
 
         folder = tmp_path / "prompts"
-        folder.mkdir()
+        shutil.copytree(prompts.PROMPTS_DIR, folder)
         (folder / "agent_system.md").write_text("CUSTOM SYSTEM {step_target}\n")
         (folder / "agent_task.md").write_text("CUSTOM TASK\n{changed_files}\n")
         monkeypatch.setattr(prompts, "PROMPTS_DIR", folder)

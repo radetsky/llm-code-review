@@ -44,8 +44,8 @@
 
 ## Фаза 5 — Промпт
 - [x] Усі промпти винесено в `prompts/*.md` (`prompts.py`): `agent_system` (ASD-STE100, без згадки про блокування), `agent_task`, `agent_nudge`, `agent_budget_exhausted`, `classic_review`, `classic_code_suggestions`
-- [ ] Опційні блоки Django / Rust / Go, підтягнути `custom_*` правила
-- [ ] Тюнінг під Qwen: коротко, чіткий формат, 1–2 приклади
+- [x] Опційні блоки Django / Rust / Go (`prompt.language_blocks`, `agent_prompt.py`), `custom_*` правила та `check_docstrings` для агента (спільна `collect_rules`)
+- [x] Тюнінг під Qwen: правило про формат повідомлення, 2 приклади в `agent_system.md` (оцінка впливу — у фазі 7)
 
 ## Фаза 6 — GitHub Action
 - [ ] Inputs `engine`, `max_steps`, `wall_timeout`; прибрати `fail_on_critical`, `strict`, крок «Check for failures»

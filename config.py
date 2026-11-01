@@ -32,6 +32,7 @@ class ReviewConfig:
             "custom_warnings": [],
             "custom_suggestions": [],
             "additional_instructions": None,
+            "language_blocks": "auto",  # "auto", or a list: ["django", "go", "rust"]
         },
         "review": {
             "critical_rules": [

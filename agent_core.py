@@ -20,6 +20,7 @@ from typing import Any
 import json5
 from openai import OpenAI, OpenAIError
 
+from agent_prompt import build_system_prompt
 from agent_tools import DUPLICATE_PREFIX, AgentTools
 from prompts import load_prompt, render
 from review_core import CodeSuggestion, ReviewResult
@@ -163,7 +164,6 @@ class AgentReviewer:
         self.client = client
         self.trace = trace
         self.trace_llm = trace_llm
-        self.system_prompt = load_prompt("agent_system")
         self._printed = 0  # messages already shown by trace_llm
 
     # -- setup -------------------------------------------------------------
@@ -303,7 +303,9 @@ class AgentReviewer:
             BASE_STEP_TARGET + STEPS_PER_FILE * len(tools.parsed_files),
         )
         stats["step_target"] = step_target
-        system_prompt = render(self.system_prompt, step_target=step_target)
+        system_prompt = build_system_prompt(
+            cfg, tools.parsed_files, tools.source, step_target
+        )
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
             {

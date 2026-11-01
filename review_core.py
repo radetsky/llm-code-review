@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 from openai import OpenAI, OpenAIError
 
-from prompts import load_prompt
+from prompts import collect_rules, load_prompt
 
 CODE_SUGGESTION_RE = re.compile(r"^(.+?):(\d+)(?:-(\d+))?:\s*(.+)$")
 
@@ -72,39 +72,11 @@ class LLMReviewer:
         if not isinstance(prompt_config, dict):
             prompt_config = {}
 
-        # Build placeholder strings first (needed for both custom and default prompts)
-        custom_critical = prompt_config.get("custom_critical_rules") or []
-        custom_warnings = prompt_config.get("custom_warnings") or []
-        custom_suggestions = prompt_config.get("custom_suggestions") or []
-        additional = prompt_config.get("additional_instructions") or ""
-
-        if not isinstance(custom_critical, list):
-            custom_critical = []
-        if not isinstance(custom_warnings, list):
-            custom_warnings = []
-        if not isinstance(custom_suggestions, list):
-            custom_suggestions = []
-        if not isinstance(additional, str):
-            additional = ""
-
-        if self.config.get("review.check_docstrings", True):
-            docstring_rule = (
-                "Flag missing docstrings/documentation comments on functions, methods, "
-                "and classes (especially large ones). Suggest language-appropriate format: "
-                "Python docstrings, JSDoc, Javadoc, Doxygen, or godoc"
-            )
-            if docstring_rule not in custom_suggestions:
-                custom_suggestions.append(docstring_rule)
-
-        critical_str = "\n".join(
-            f"- {rule}" for rule in custom_critical if isinstance(rule, str)
-        )
-        warnings_str = "\n".join(
-            f"- {rule}" for rule in custom_warnings if isinstance(rule, str)
-        )
-        suggestions_str = "\n".join(
-            f"- {rule}" for rule in custom_suggestions if isinstance(rule, str)
-        )
+        rules = collect_rules(self.config)
+        critical_str = rules["critical"]
+        warnings_str = rules["warnings"]
+        suggestions_str = rules["suggestions"]
+        additional = rules["additional"]
 
         # Build code suggestion format instructions
         if self.config.get_code_suggestions_enabled():

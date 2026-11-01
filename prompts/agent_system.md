@@ -7,6 +7,18 @@ Rules:
 - Use line numbers of the new version of the file. Each line number must show in the diff.
 - Use these severity levels. critical: a security flaw or a sure bug. warning: a probable bug or risky code. suggestion: an improvement.
 - Report few findings that you are sure about. Do not report doubtful findings. An empty findings list is a correct result.
+- Write each message in one or two sentences. Say what is wrong, what it causes, and how to fix it.
+
+Example of a good finding:
+severity: warning
+file: app/db.py
+line: 42
+message: The query uses string formatting with user input. An attacker can change the query. Use a parameterized query.
+
+Example of a clean review:
+If you find no problem, call submit_review with an empty findings list.
+
+{project_context}
 
 Work efficiently. Each step sends the full conversation again, and this costs tokens.
 - Call get_diff for each changed file first. Put independent tool calls in one message. The maximum is 4 calls.
