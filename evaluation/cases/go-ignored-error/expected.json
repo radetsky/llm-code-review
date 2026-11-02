@@ -1,0 +1,14 @@
+{
+  "description": "A refactor drops the error check after os.Open.",
+  "expected": [
+    {
+      "file": "store/config.go",
+      "pattern": "f, _ := os\\.Open\\(path\\)",
+      "kind": "warning",
+      "note": "ignored error, nil file"
+    }
+  ],
+  "extra_extensions": [
+    ".go"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "description": "A new function returns one item too many on each page.",
+  "expected": [
+    {
+      "file": "shop/pagination.py",
+      "pattern": "end = start \\+ size \\+ 1",
+      "kind": "warning",
+      "note": "off by one"
+    }
+  ]
+}

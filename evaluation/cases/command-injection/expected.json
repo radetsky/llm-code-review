@@ -1,0 +1,11 @@
+{
+  "description": "A new function runs a shell command that contains a file name from the caller.",
+  "expected": [
+    {
+      "file": "tools/convert.py",
+      "pattern": "f\"convert \\{filename\\}",
+      "kind": "critical",
+      "note": "command injection"
+    }
+  ]
+}

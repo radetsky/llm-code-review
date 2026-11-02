@@ -1,0 +1,2 @@
+# Sample code in the golden cases has deliberate problems. Do not lint or format it.
+extend-exclude = ["evaluation/cases"]

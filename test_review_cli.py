@@ -403,3 +403,45 @@ class TestHooks:
         proc = run_hook(tmp_path, "pre-push", 0, output="not json")
         assert proc.returncode == 0
         assert "Could not read the review report" in proc.stdout
+
+
+class TestConfigFile:
+    def write(self, tmp_path, **review):
+        path = tmp_path / "other.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "llm": {"model": "other-model"},
+                    "output": {"max_context_lines": 3},
+                    "review": review,
+                }
+            )
+        )
+        return path
+
+    def test_config_file_is_used(self, repo, fake_agent, tmp_path):
+        path = self.write(tmp_path, file_extensions=[".py"])
+        cli = ReviewCLI()
+        cli.run(["--engine", "agent", "--mode", "staged", "--config-file", str(path)])
+        assert cli.config.config_file == str(path)
+        assert cli.config.get("output.max_context_lines") == 3
+        # The parser and the agent use the new config too.
+        assert cli.parser.config is cli.config
+        assert fake_agent.instances[0].tools.config is cli.config
+
+    def test_default_config_without_the_flag(self, repo, fake_agent):
+        cli = ReviewCLI()
+        cli.run(["--engine", "agent", "--mode", "staged"])
+        assert cli.config.config_file == "review_config.json"
+
+    def test_file_extensions_from_the_file_decide_what_is_reviewed(
+        self, repo, fake_agent, tmp_path
+    ):
+        path = self.write(
+            tmp_path, file_extensions=[".rs"]
+        )  # The change is a .py file.
+        cli = ReviewCLI()
+        code = cli.run(
+            ["--engine", "agent", "--mode", "staged", "--config-file", str(path)]
+        )
+        assert code == 0 and fake_agent.instances == []  # Nothing to review.

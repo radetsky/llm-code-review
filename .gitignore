@@ -25,3 +25,4 @@ review_result.json
 # OS
 .DS_Store
 Thumbs.db
+evaluation/results/

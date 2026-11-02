@@ -1,0 +1,20 @@
+{
+  "description": "New Rust functions call unwrap on user input and use transmute for a byte conversion.",
+  "expected": [
+    {
+      "file": "src/lib.rs",
+      "pattern": "parse::<u16>\\(\\)\\.unwrap\\(\\)",
+      "kind": "warning",
+      "note": "unwrap on input"
+    },
+    {
+      "file": "src/lib.rs",
+      "pattern": "transmute",
+      "kind": "warning",
+      "note": "unsafe transmute"
+    }
+  ],
+  "extra_extensions": [
+    ".rs"
+  ]
+}

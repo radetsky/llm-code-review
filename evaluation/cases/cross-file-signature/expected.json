@@ -1,0 +1,11 @@
+{
+  "description": "A function gets a new required parameter. Two callers that the diff does not show still use the old call.",
+  "expected": [
+    {
+      "file": "shop/prices.py",
+      "pattern": "def parse_price\\(text: str, currency: str, locale: str\\)",
+      "kind": "warning",
+      "note": "callers in cart.py and checkout.py break"
+    }
+  ]
+}

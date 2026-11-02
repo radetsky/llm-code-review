@@ -1,0 +1,11 @@
+{
+  "description": "A new view deletes any order. It has no login check, no owner check and it is exempt from CSRF.",
+  "expected": [
+    {
+      "file": "shop/views.py",
+      "pattern": "Order\\.objects\\.get\\(pk=order_id\\)\\.delete\\(\\)",
+      "kind": "critical",
+      "note": "no authentication or ownership check"
+    }
+  ]
+}

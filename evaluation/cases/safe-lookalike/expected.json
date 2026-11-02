@@ -1,0 +1,4 @@
+{
+  "description": "Code that looks risky but is safe: an allow-listed table name, a command as a list and safe_load. A correct review reports no critical issue and no warning.",
+  "expected": []
+}

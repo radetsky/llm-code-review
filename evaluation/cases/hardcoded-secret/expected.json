@@ -1,0 +1,11 @@
+{
+  "description": "A live payment API key is written in the source code.",
+  "expected": [
+    {
+      "file": "app/settings.py",
+      "pattern": "PAYMENT_API_KEY = ",
+      "kind": "critical",
+      "note": "hardcoded secret"
+    }
+  ]
+}

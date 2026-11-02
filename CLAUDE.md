@@ -48,6 +48,11 @@ ruff format .                               # Format all Python files
 ruff check .                                # Lint all Python files
 ruff check --fix .                          # Auto-fix linting issues
 
+# Evaluation on golden cases (calls the LLM)
+python -m evaluation.run_eval --list                        # List the cases
+python -m evaluation.run_eval --runs 3                      # Both engines, 3 runs for each case
+python -m evaluation.run_eval --engines agent --cases sql-injection   # One engine, one case
+
 # Monitoring
 python monitor.py health                    # System health check
 python monitor.py report --days 7           # Usage report

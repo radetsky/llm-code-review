@@ -46,6 +46,14 @@ class ReviewCLI:
         # Setup logging based on verbosity
         setup_logging(getattr(parsed_args, "verbose", False))
 
+        # Load the config file that the user names
+        if getattr(parsed_args, "config_file", None):
+            self.config = ReviewConfig(parsed_args.config_file)
+            self.parser = DiffParser(self.config)
+            self.reviewer = LLMReviewer(
+                self.config, trace=self.trace, trace_llm=self.trace_llm
+            )
+
         # Update trace mode if specified
         self.trace = getattr(parsed_args, "trace", False)
         self.trace_llm = getattr(parsed_args, "trace_llm", False)

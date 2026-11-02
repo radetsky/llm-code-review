@@ -1,0 +1,11 @@
+{
+  "description": "A new search function builds an SQL query with an f-string and user input.",
+  "expected": [
+    {
+      "file": "app/db.py",
+      "pattern": "WHERE name = '\\{name\\}'",
+      "kind": "critical",
+      "note": "SQL injection"
+    }
+  ]
+}
