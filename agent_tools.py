@@ -17,9 +17,6 @@ IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MAX_LINE_CHARS = 300
 MAX_FIND_RESULTS = 100
 DUPLICATE_PREFIX = "You already got this result earlier in this review"
-SOURCE_TRUNCATED = (
-    "\n[truncated]"  # Marker that RepoSource.read adds when it cuts the text.
-)
 
 
 def _fn(name: str, description: str, properties: dict, required: list[str]) -> dict:
@@ -268,23 +265,20 @@ class AgentTools:
         if end is not None and end < (start or 1):
             raise ToolError("end_line must be >= start_line")
 
-        text = self.source.read(path)
-        source_truncated = text.endswith(SOURCE_TRUNCATED)
-        if source_truncated:
-            text = text[: -len(SOURCE_TRUNCATED)]
-        lines = text.split("\n")
-        if lines and lines[-1] == "":  # Remove the empty item after the last newline.
-            lines.pop()
-        total = len(lines)
-        if total == 0:
-            return "(The file is empty.)"
-
-        first = start or 1
-        if first > total:
-            return f"(No lines in this range. The file has {total} lines.)"
         window = int(self.config.get("agent.read_default_lines", 300))
-        last = min(end if end is not None else first + window - 1, total)
+        scan_limit = int(self.config.get("agent.max_read_scan_bytes", 5_000_000))
+        first = start or 1
+        wanted_last = end if end is not None else first + window - 1
+        part = self.source.read_lines(path, first, wanted_last, scan_limit)
 
+        if part.total == 0:
+            return "(The file is empty.)"
+        if not part.lines:
+            if part.total is not None:
+                return f"(No lines in this range. The file has {part.total} lines.)"
+            return self._beyond_limit_note(part.scanned)
+
+        last = first + len(part.lines) - 1
         key = (path, first, last)
         if key in self._seen_reads:
             return (
@@ -293,17 +287,28 @@ class AgentTools:
             )
         self._seen_reads.add(key)
 
-        numbered = "\n".join(
-            f"{first + i}: {line}" for i, line in enumerate(lines[first - 1 : last])
-        )
-        if end is None and last < total:
-            numbered += (
-                f"\n[Lines {first}-{last} of {total} shown. Call read_file "
-                "with start_line and end_line to read other parts.]"
+        text = "\n".join(f"{first + i}: {line}" for i, line in enumerate(part.lines))
+        if part.total is not None:
+            if end is None and last < part.total:
+                text += (
+                    f"\n[Lines {first}-{last} of {part.total} shown. Call read_file "
+                    "with start_line and end_line to read other parts.]"
+                )
+        elif last < wanted_last:
+            text += "\n" + self._beyond_limit_note(part.scanned)
+        elif end is None:
+            text += (
+                f"\n[Lines {first}-{last} shown. The file has more lines. Call "
+                "read_file with start_line and end_line to read other parts.]"
             )
-        elif last == total and source_truncated:
-            numbered += "\n[The file is larger than the read limit. The rest of the file is not available.]"
-        return numbered
+        return text
+
+    @staticmethod
+    def _beyond_limit_note(scanned: int) -> str:
+        return (
+            "[The file is larger than the read limit. "
+            f"Lines after line {scanned} are not available.]"
+        )
 
     def _grep(self, args: dict) -> str:
         pattern = self._str_arg(args, "pattern")

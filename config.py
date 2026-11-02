@@ -82,6 +82,7 @@ class ReviewConfig:
             "max_tool_output_chars": 32000,
             "max_grep_matches": 50,
             "read_default_lines": 300,
+            "max_read_scan_bytes": 5000000,
             "max_steps": 20,
             "max_total_tokens": 1000000,
             "wall_timeout_sec": 300,

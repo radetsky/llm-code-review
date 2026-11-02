@@ -2,11 +2,13 @@
 Git diff parser for extracting and structuring code changes.
 """
 
+import contextlib
 import fnmatch
 import os
 import posixpath
 import re
 import subprocess
+from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 
 
@@ -286,6 +288,23 @@ class RepoAccessError(Exception):
     """Raised when a path is outside the repository or is denied."""
 
 
+@dataclass
+class LineSlice:
+    """Lines that RepoSource.read_lines returns.
+
+    lines: the requested lines, without line ends.
+    first: the number of the first requested line.
+    scanned: the number of lines that the method counted.
+    total: the number of lines in the file, or None when the file is larger
+        than the scan limit.
+    """
+
+    lines: list[str]
+    first: int
+    scanned: int
+    total: int | None
+
+
 class RepoSource:
     """Read-only access to repository files for a given review mode.
 
@@ -400,14 +419,13 @@ class RepoSource:
 
     # -- public API --------------------------------------------------------
 
-    def read(
-        self,
-        path: str,
-        start: int | None = None,
-        end: int | None = None,
-        max_bytes: int = 200_000,
-    ) -> str:
-        """Return file text, optionally limited to 1-based inclusive lines."""
+    @contextlib.contextmanager
+    def _open_stream(self, path: str):
+        """Open a file for reading as a binary stream, after all safety checks.
+
+        The stream gives the file content for the source mode. The caller
+        can stop early. This method never loads the whole file.
+        """
         rel = self._normalize(path)
         if not rel:
             raise RepoAccessError("A file path is required")
@@ -425,25 +443,44 @@ class RepoSource:
             if not os.path.isfile(full):
                 raise FileNotFoundError(rel)
             with open(full, "rb") as f:
-                raw = f.read(max_bytes + 1)
-        else:
-            entry = self._entry_mode(rel)
-            if entry is None:
-                raise FileNotFoundError(rel)
-            if entry == "120000":
-                raise RepoAccessError("Symlinks are not allowed")
-            if entry not in ("100644", "100755"):
-                raise RepoAccessError("Not a regular file")
-            spec = f":{rel}" if self.mode == "index" else f"{self.rev}:{rel}"
-            result = subprocess.run(
-                ["git", "show", spec],
-                capture_output=True,
-                check=False,
-                cwd=self.root,
-            )
-            if result.returncode != 0:
-                raise FileNotFoundError(rel)
-            raw = result.stdout[: max_bytes + 1]
+                yield f
+            return
+
+        entry = self._entry_mode(rel)
+        if entry is None:
+            raise FileNotFoundError(rel)
+        if entry == "120000":
+            raise RepoAccessError("Symlinks are not allowed")
+        if entry not in ("100644", "100755"):
+            raise RepoAccessError("Not a regular file")
+        spec = f":{rel}" if self.mode == "index" else f"{self.rev}:{rel}"
+        proc = subprocess.Popen(
+            ["git", "show", spec],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            cwd=self.root,
+        )
+        try:
+            yield proc.stdout
+        finally:
+            proc.kill()  # Stop git when the caller does not read to the end.
+            proc.wait()
+            proc.stdout.close()
+
+    def read(
+        self,
+        path: str,
+        start: int | None = None,
+        end: int | None = None,
+        max_bytes: int = 200_000,
+    ) -> str:
+        """Return file text, optionally limited to 1-based inclusive lines.
+
+        The method reads at most max_bytes bytes. Use read_lines to read
+        lines from a large file.
+        """
+        with self._open_stream(path) as stream:
+            raw = stream.read(max_bytes + 1)
 
         if b"\x00" in raw[:8000]:
             raise RepoAccessError("Binary file")
@@ -458,6 +495,62 @@ class RepoSource:
         if truncated:
             text += "\n[truncated]"
         return text
+
+    def read_lines(
+        self,
+        path: str,
+        start: int,
+        end: int,
+        max_scan_bytes: int = 5_000_000,
+    ) -> "LineSlice":
+        """Return the lines start..end (1-based, included) of a file.
+
+        The method reads the file as a stream and keeps only the requested
+        lines. It stops after about max_scan_bytes bytes. If the file is
+        larger, the total number of lines is unknown and the lines after the
+        scanned part are not available.
+        """
+        start = max(int(start), 1)
+        end = max(int(end), start)
+        kept: list[str] = []
+        scanned = 0
+        complete = False
+
+        def keep(raw_line: bytes) -> None:
+            if start <= scanned <= end:
+                kept.append(raw_line.decode("utf-8", errors="replace"))
+
+        with self._open_stream(path) as stream:
+            buf = stream.read(65536)
+            if b"\x00" in buf[:8000]:
+                raise RepoAccessError("Binary file")
+            bytes_read = len(buf)
+            while True:
+                pos = 0
+                while (i := buf.find(b"\n", pos)) >= 0:
+                    scanned += 1
+                    keep(buf[pos:i])
+                    pos = i + 1
+                buf = buf[pos:]
+                if bytes_read >= max_scan_bytes:
+                    complete = not (buf or stream.read(1))
+                    break
+                chunk = stream.read(65536)
+                if not chunk:
+                    complete = True
+                    if buf:  # The last line has no newline.
+                        scanned += 1
+                        keep(buf)
+                    break
+                bytes_read += len(chunk)
+                buf += chunk
+
+        return LineSlice(
+            lines=kept,
+            first=start,
+            scanned=scanned,
+            total=scanned if complete else None,
+        )
 
     def list_dir(self, path: str = "") -> list[str]:
         """List tracked entries directly under a directory (dirs end with '/')."""

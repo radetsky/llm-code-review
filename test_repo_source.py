@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -202,3 +203,114 @@ class TestForDiffMode:
         assert (src.mode, src.rev) == ("rev", "feature")
         with pytest.raises(ValueError):
             RepoSource.for_diff_mode("bogus", root=repo)
+
+
+class TestReadLines:
+    @pytest.fixture
+    def files(self, repo):
+        """Add files of several shapes, then stage them."""
+        root = Path(repo)
+        (root / "five.txt").write_text("l1\nl2\nl3\nl4\nl5\n")
+        (root / "nonl.txt").write_text("a\nb")  # No newline at the end.
+        (root / "empty.txt").write_text("")
+        (root / "crlf.txt").write_bytes(b"a\r\nb\r\n")
+        (root / "long.txt").write_text("".join(f"line{i}\n" for i in range(40_000)))
+        _git(repo, "add", "five.txt", "nonl.txt", "empty.txt", "crlf.txt", "long.txt")
+        _git(repo, "commit", "-qm", "files")
+        return repo
+
+    def sources(self, repo):
+        return [
+            RepoSource(repo, "worktree"),
+            RepoSource(repo, "index"),
+            RepoSource(repo, "rev", rev="HEAD"),
+        ]
+
+    def test_range_is_the_same_in_every_mode(self, files):
+        for src in self.sources(files):
+            part = src.read_lines("five.txt", 2, 4)
+            assert part.lines == ["l2", "l3", "l4"]
+            assert (part.first, part.scanned, part.total) == (2, 5, 5)
+
+    def test_range_past_the_end(self, files):
+        for src in self.sources(files):
+            part = src.read_lines("five.txt", 4, 99)
+            assert part.lines == ["l4", "l5"] and part.total == 5
+            part = src.read_lines("five.txt", 50, 60)
+            assert part.lines == [] and part.total == 5
+
+    def test_last_line_without_newline(self, files):
+        for src in self.sources(files):
+            part = src.read_lines("nonl.txt", 1, 10)
+            assert part.lines == ["a", "b"] and part.total == 2
+
+    def test_empty_file(self, files):
+        for src in self.sources(files):
+            part = src.read_lines("empty.txt", 1, 10)
+            assert part.lines == [] and part.total == 0
+
+    def test_carriage_returns_stay_in_the_text(self, files):
+        part = RepoSource(files, "worktree").read_lines("crlf.txt", 1, 2)
+        assert part.lines == ["a\r", "b\r"]
+
+    def test_deep_range_in_a_large_file(self, files):
+        for src in self.sources(files):
+            part = src.read_lines("long.txt", 39_998, 40_000)
+            assert part.lines == ["line39997", "line39998", "line39999"]
+            assert part.total == 40_000
+
+    def test_invalid_range_values_are_corrected(self, files):
+        part = RepoSource(files, "worktree").read_lines("five.txt", 0, -5)
+        assert part.lines == ["l1"] and part.first == 1
+
+    def test_scan_limit_makes_the_total_unknown(self, files):
+        # The limit applies per 64 KB chunk. long.txt has about 380 KB.
+        for src in self.sources(files):
+            part = src.read_lines("long.txt", 1, 3, max_scan_bytes=1000)
+            assert part.lines == ["line0", "line1", "line2"]
+            assert part.total is None
+            assert 5000 < part.scanned < 40_000
+
+    def test_lines_after_the_scan_limit_are_not_available(self, files):
+        for src in self.sources(files):
+            part = src.read_lines("long.txt", 39_000, 39_010, max_scan_bytes=1000)
+            assert part.lines == [] and part.total is None
+
+    def test_small_file_is_complete_with_a_tiny_limit(self, files):
+        part = RepoSource(files, "worktree").read_lines(
+            "five.txt", 1, 5, max_scan_bytes=1
+        )
+        assert part.total == 5
+
+    @pytest.mark.parametrize("mode", ["worktree", "index"])
+    def test_refusals_are_the_same_as_for_read(self, files, mode):
+        src = RepoSource(files, mode)
+        with pytest.raises(RepoAccessError):
+            src.read_lines("bin.dat", 1, 2)
+        with pytest.raises(RepoAccessError):
+            src.read_lines(".env", 1, 2)
+        with pytest.raises(RepoAccessError):
+            src.read_lines("link.py", 1, 2)
+        with pytest.raises(RepoAccessError):
+            src.read_lines("../x", 1, 2)
+        with pytest.raises(FileNotFoundError):
+            src.read_lines("nope.txt", 1, 2)
+
+    def test_read_stops_at_the_byte_limit_in_every_mode(self, files):
+        for src in self.sources(files):
+            text = src.read("long.txt")
+            assert len(text) == 200_000 + len("\n[truncated]")
+            assert text.endswith("\n[truncated]")
+
+    def test_git_process_is_stopped_after_an_early_exit(self, files, monkeypatch):
+        started = []
+        real = subprocess.Popen
+
+        def spy(*args, **kwargs):
+            proc = real(*args, **kwargs)
+            started.append(proc)
+            return proc
+
+        monkeypatch.setattr(subprocess, "Popen", spy)
+        RepoSource(files, "index").read_lines("long.txt", 1, 2, max_scan_bytes=1000)
+        assert started and all(p.poll() is not None for p in started)

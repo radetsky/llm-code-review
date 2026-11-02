@@ -383,3 +383,79 @@ class TestCallDeduplication:
     def test_summary_is_not_a_tool_call(self, tools):
         assert "app.py (modified)" in tools.changed_files_summary()
         assert tools.call("list_changed_files", {}).startswith("app.py (modified)")
+
+
+class TestReadLargeFiles:
+    """Files above the scan limit and files that are very large."""
+
+    @pytest.fixture
+    def huge(self, repo):
+        """A file with 40,000 lines (about 380 KB), staged."""
+        with open(os.path.join(repo, "huge.py"), "w") as f:
+            f.write("".join(f"v{i} = {i}\n" for i in range(40_000)))
+        _git(repo, "add", "huge.py")
+
+    def test_deep_range_works_with_the_default_limit(self, tools, huge):
+        out = tools.call(
+            "read_file", {"path": "huge.py", "start_line": 39_999, "end_line": 40_000}
+        )
+        assert out == "39999: v39998 = 39998\n40000: v39999 = 39999"
+
+    def test_total_lines_are_correct_for_a_large_file(self, tools, huge):
+        out = tools.call("read_file", {"path": "huge.py"})
+        assert out.endswith(
+            "[Lines 1-300 of 40000 shown. Call read_file with start_line and end_line to read other parts.]"
+        )
+
+    def test_file_above_the_scan_limit_has_no_total(self, tools, huge):
+        tools.config.config["agent"]["max_read_scan_bytes"] = 1000
+        out = tools.call("read_file", {"path": "huge.py"})
+        assert out.startswith("1: v0 = 0")
+        assert out.endswith(
+            "[Lines 1-300 shown. The file has more lines. Call read_file with "
+            "start_line and end_line to read other parts.]"
+        )
+        assert "of 40000" not in out
+
+    def test_lines_beyond_the_scan_limit_are_reported(self, tools, huge):
+        tools.config.config["agent"]["max_read_scan_bytes"] = 1000
+        out = tools.call(
+            "read_file", {"path": "huge.py", "start_line": 39_000, "end_line": 39_010}
+        )
+        assert out.startswith(
+            "[The file is larger than the read limit. Lines after line "
+        )
+        assert out.endswith(" are not available.]")
+        assert "No lines in this range" not in out
+
+    def test_range_that_crosses_the_scan_limit_is_cut_with_a_note(self, tools, huge):
+        tools.config.config["agent"]["max_read_scan_bytes"] = 1000
+        tools.config.config["agent"]["max_tool_output_chars"] = 10_000_000
+        out = tools.call(
+            "read_file", {"path": "huge.py", "start_line": 1, "end_line": 40_000}
+        )
+        lines = out.split("\n")
+        assert lines[0] == "1: v0 = 0"
+        assert lines[-1].startswith("[The file is larger than the read limit.")
+        assert 5000 < len(lines) < 40_000
+
+    def test_tool_output_is_still_cut_for_a_huge_range(self, tools, huge):
+        out = tools.call(
+            "read_file", {"path": "huge.py", "start_line": 1, "end_line": 40_000}
+        )
+        assert "[Output cut:" in out and len(out) < 33_000
+
+    def test_repeated_deep_read_is_deduplicated(self, tools, huge):
+        args = {"path": "huge.py", "start_line": 30_000, "end_line": 30_002}
+        assert tools.call("read_file", args).startswith("30000: v29999")
+        assert tools.call("read_file", args).startswith("You already got this result")
+
+    def test_blame_works_for_a_deep_line(self, tools, repo):
+        with open(os.path.join(repo, "deep.py"), "w") as f:
+            f.write("".join(f"w{i} = {i}\n" for i in range(40_000)))
+        _git(repo, "add", "deep.py")
+        _git(repo, "commit", "-qm", "deep")
+        out = tools.call(
+            "git_blame", {"path": "deep.py", "start_line": 39_990, "end_line": 39_991}
+        )
+        assert out.count("Tester") == 2 and "w39989 = 39989" in out
