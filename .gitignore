@@ -26,3 +26,4 @@ review_result.json
 .DS_Store
 Thumbs.db
 evaluation/results/
+logs/

@@ -19,8 +19,11 @@ source .python-venv/bin/activate.fish
 export LLM_API_KEY="your-api-key"
 
 # Optional: Override base URL and model
-export LLM_BASE_URL="https://api.opencode.ai/v1"
-export LLM_MODEL="anthropic/claude-sonnet-4"
+export LLM_BASE_URL="https://api.openai.com/v1"
+export LLM_MODEL="gpt-4"
+
+# Optional: choose the review engine (classic or agent)
+export LLM_ENGINE="agent"
 
 # Optional: Increase timeout for large reviews (default: 180 seconds)
 export LLM_TIMEOUT="300"
@@ -52,8 +55,8 @@ The system uses OpenAI-compatible client:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url=config.get_base_url,
-    timeout=config.get_timeout()(),
+    base_url=config.get_base_url(),
+    timeout=config.get_timeout(),
     api_key=config.get_api_key()
 )
 
@@ -62,6 +65,15 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Your prompt"}]
 )
 ```
+
+## Engines and Prompts
+
+- `classic` sends the diff in one prompt (`review_core.py`). `agent` lets the model read the
+  repository with read-only tools (`agent_core.py`, `agent_tools.py`).
+- Every prompt is a text file in `prompts/`. `prompts.py` loads them. Keep the placeholders.
+- The review is advisory. Do not add code that blocks a commit, a push or a pull request.
+- Write code, comments, docstrings and documentation in ASD-STE100 Simplified Technical English.
+- Run `python -m pytest` before you commit. Run `ruff format` and `ruff check` on your files.
 
 ## Important Notes
 

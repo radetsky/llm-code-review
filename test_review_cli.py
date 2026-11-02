@@ -445,3 +445,68 @@ class TestConfigFile:
             ["--engine", "agent", "--mode", "staged", "--config-file", str(path)]
         )
         assert code == 0 and fake_agent.instances == []  # Nothing to review.
+
+
+class TestMonitoringLog:
+    def lines(self, repo):
+        files = list((Path(repo) / "logs").glob("reviews_*.jsonl"))
+        return [json.loads(line) for f in files for line in f.read_text().splitlines()]
+
+    def test_off_by_default(self, repo, fake_agent, monkeypatch):
+        monkeypatch.delenv("LLM_MONITORING", raising=False)
+        run_cli("--engine", "agent", "--mode", "staged")
+        assert not (Path(repo) / "logs").exists()
+
+    def test_agent_review_is_logged(self, repo, fake_agent, monkeypatch):
+        monkeypatch.setenv("LLM_MONITORING", "1")
+        fake_agent.outcome = result(
+            warnings=["app.py:2: meh"],
+            stats={"steps": 3, "tokens": 900, "tool_calls": 2},
+        )
+        run_cli("--engine", "agent", "--mode", "staged")
+        (entry,) = self.lines(repo)
+        assert entry["metadata"]["engine"] == "agent"
+        assert entry["metadata"]["mode"] == "staged"
+        assert entry["metadata"]["duration_sec"] >= 0
+        assert entry["agent"]["steps"] == 3 and entry["agent"]["tokens"] == 900
+        assert entry["result"]["warning_count"] == 1
+
+    def test_classic_review_is_logged(self, repo, monkeypatch):
+        monkeypatch.setenv("LLM_MONITORING", "1")
+        monkeypatch.setattr(
+            "review_core.LLMReviewer.review_diff", lambda self, diff: result()
+        )
+        run_cli("--mode", "staged")
+        (entry,) = self.lines(repo)
+        assert entry["metadata"]["engine"] == "classic" and "agent" not in entry
+
+    def test_fallback_is_logged(self, repo, fake_agent, monkeypatch):
+        monkeypatch.setenv("LLM_MONITORING", "1")
+        fake_agent.outcome = result(
+            status="error", raw="boom", stats={"steps": 2, "tokens": 10}
+        )
+        monkeypatch.setattr(
+            "review_core.LLMReviewer.review_diff", lambda self, diff: result()
+        )
+        run_cli("--engine", "agent", "--base", "main", "--head", "feature")
+        (entry,) = self.lines(repo)
+        assert entry["metadata"]["engine"] == "agent->classic"
+        assert entry["metadata"]["mode"] == "range"
+        assert entry["agent"]["fallback"] == "classic"
+
+    def test_a_broken_log_does_not_change_the_review(
+        self, repo, fake_agent, monkeypatch, capsys
+    ):
+        monkeypatch.setenv("LLM_MONITORING", "1")
+        (Path(repo) / "logs").write_text("this is a file, not a folder")
+        code, data, _, _ = run_json(capsys, "--engine", "agent", "--mode", "staged")
+        assert code == 0 and data["status"] == "success"
+
+    def test_log_folder_from_the_config(self, repo, fake_agent, tmp_path, monkeypatch):
+        monkeypatch.setenv("LLM_MONITORING", "1")
+        custom = tmp_path / "elsewhere"
+        config = tmp_path / "c.json"
+        config.write_text(json.dumps({"monitoring": {"log_dir": str(custom)}}))
+        run_cli("--engine", "agent", "--mode", "staged", "--config-file", str(config))
+        assert list(custom.glob("reviews_*.jsonl"))
+        assert not (Path(repo) / "logs").exists()

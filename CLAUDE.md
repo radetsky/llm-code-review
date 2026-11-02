@@ -55,7 +55,8 @@ python -m evaluation.run_eval --engines agent --cases sql-injection   # One engi
 
 # Monitoring
 python monitor.py health                    # System health check
-python monitor.py report --days 7           # Usage report
+python monitor.py report --days 7           # Report by engine: time, steps, tokens (needs monitoring.enabled)
+python monitor.py report --days 7 --json    # The same report as JSON
 ```
 
 ## Architecture
@@ -142,7 +143,15 @@ Git hooks (`hooks/pre-commit`, `hooks/pre-push`) never block: they always exit 0
 - `LLM_TIMEOUT` - Request timeout in seconds (default: 180)
 - `LLM_MAX_TOKENS_PER_REQUEST` - Max tokens per review chunk (default: 4096)
 - `LLM_ENGINE` - `agent` or `classic` (CLI `--engine` wins; then `agent.enabled` in config)
+- `LLM_MONITORING` - `1` writes one line to the review log for each review (config `monitoring.enabled`)
 - `LLM_TOKEN_LIMIT_STRATEGY` - Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`)
+
+### Config sections
+
+- `agent.*` - budgets and limits of the agent engine (`max_steps`, `max_total_tokens`,
+  `wall_timeout_sec`, `max_tool_output_chars`, `read_default_lines`, `max_read_scan_bytes`, ...)
+- `prompt.*` - project rules, `additional_instructions` and `language_blocks`
+- `monitoring.*` - `enabled` and `log_dir` of the review log (`monitor.py` reads it)
 
 ### Current Setup
 - Model: `qwen3.8-27b` (corporate, SGLang, 128k context, thinking disabled via `llm.extra_body`)

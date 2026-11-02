@@ -87,6 +87,10 @@ class ReviewConfig:
             "max_total_tokens": 1000000,
             "wall_timeout_sec": 300,
         },
+        "monitoring": {
+            "enabled": False,  # True writes one line to a log file for each review
+            "log_dir": "logs",
+        },
         "fallback": {
             "enable_static_analysis": True,
             "allow_commit_on_unavailable": True,
@@ -234,6 +238,13 @@ class ReviewConfig:
 
         logger.debug("Using token limit strategy from config: %s", config_value)
         return config_value
+
+    def get_monitoring_enabled(self) -> bool:
+        """Check if review logging is on. The environment variable LLM_MONITORING wins."""
+        env_value = os.getenv("LLM_MONITORING")
+        if env_value is not None:
+            return env_value.lower() in ("true", "1", "yes")
+        return bool(self.get("monitoring.enabled", False))
 
     def get_engine(self, cli_value: str | None = None) -> str:
         """Resolve the review engine: CLI flag, then LLM_ENGINE, then config.

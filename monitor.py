@@ -20,10 +20,9 @@ from review_core import LLMReviewer, ReviewResult
 class MonitoringUtils:
     """Utilities for monitoring LLM code review system."""
 
-    def __init__(self):
-        self.config = ReviewConfig()
-        self.logs_dir = Path("logs")
-        self.logs_dir.mkdir(exist_ok=True)
+    def __init__(self, config=None, logs_dir=None):
+        self.config = config or ReviewConfig()
+        self.logs_dir = Path(logs_dir or self.config.get("monitoring.log_dir", "logs"))
 
     def health_check(self) -> Dict[str, Any]:
         """Perform comprehensive health check."""
@@ -155,86 +154,192 @@ class MonitoringUtils:
     def log_review_result(
         self, result: ReviewResult, metadata: Optional[Dict[str, Any]] = None
     ):
-        """Log review results for monitoring."""
+        """Write one line to the log of the day.
+
+        The metadata can hold: engine, duration_sec, model, mode and files.
+        The method creates the log folder when it writes the first line.
+        """
+        stats = result.agent_stats or {}
         log_entry = {
             "timestamp": datetime.now().isoformat(),
             "result": {
                 "status": result.status,
+                "review_outcome": result.review_outcome,
                 "critical_count": len(result.critical_issues),
                 "warning_count": len(result.warnings),
-                "suggestion_count": len(result.suggestions),
+                "suggestion_count": len(result.suggestions)
+                + len(result.code_suggestions),
                 "fallback_used": result.fallback_used,
             },
             "metadata": metadata if metadata is not None else {},
         }
+        if stats:
+            log_entry["agent"] = {
+                key: stats.get(key) for key in AGENT_STAT_KEYS if key in stats
+            }
 
-        # Add to daily log file
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
         log_file = self.logs_dir / f"reviews_{datetime.now().strftime('%Y%m%d')}.jsonl"
-
         with open(log_file, "a") as f:
             f.write(json.dumps(log_entry) + "\n")
 
+    def read_entries(self, days: int) -> list:
+        """Return the log entries of the last days, oldest first."""
+        entries = []
+        for i in reversed(range(days)):
+            date = (datetime.now() - timedelta(days=i)).strftime("%Y%m%d")
+            log_file = self.logs_dir / f"reviews_{date}.jsonl"
+            if not log_file.exists():
+                continue
+            with open(log_file, "r") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line.strip())
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(entry, dict) and isinstance(
+                        entry.get("result"), dict
+                    ):
+                        entries.append(entry)
+        return entries
+
     def generate_report(self, days: int = 7) -> Dict[str, Any]:
         """Generate monitoring report for specified period."""
+        entries = self.read_entries(days)
         report = {
             "period_days": days,
             "generated_at": datetime.now().isoformat(),
-            "summary": {},
-            "details": [],
+            "summary": summarize(entries),
+            "by_engine": {},
+            "details": entries[-10:],  # Last 10 reviews
         }
-
-        # Collect logs from specified period
-        all_entries = []
-
-        for i in range(days):
-            date = (datetime.now() - timedelta(days=i)).strftime("%Y%m%d")
-            log_file = self.logs_dir / f"reviews_{date}.jsonl"
-
-            if log_file.exists():
-                with open(log_file, "r") as f:
-                    for line in f:
-                        try:
-                            entry = json.loads(line.strip())
-                            all_entries.append(entry)
-                        except json.JSONDecodeError:
-                            continue
-
-        if not all_entries:
-            report["summary"] = {"total_reviews": 0}
-            return report
-
-        # Calculate summary statistics
-        total_reviews = len(all_entries)
-        successful_reviews = sum(
-            1 for e in all_entries if e["result"]["status"] == "success"
-        )
-        unavailable_reviews = sum(
-            1 for e in all_entries if e["result"]["status"] == "model_unavailable"
-        )
-        total_critical = sum(e["result"]["critical_count"] for e in all_entries)
-        total_warnings = sum(e["result"]["warning_count"] for e in all_entries)
-
-        report["summary"] = {
-            "total_reviews": total_reviews,
-            "successful_reviews": successful_reviews,
-            "unavailable_reviews": unavailable_reviews,
-            "success_rate": successful_reviews / total_reviews * 100
-            if total_reviews > 0
-            else 0,
-            "total_critical_issues": total_critical,
-            "total_warnings": total_warnings,
-            "avg_critical_per_review": total_critical / total_reviews
-            if total_reviews > 0
-            else 0,
-            "avg_warnings_per_review": total_warnings / total_reviews
-            if total_reviews > 0
-            else 0,
-        }
-
-        # Add recent entries for details
-        report["details"] = all_entries[-10:]  # Last 10 reviews
-
+        for engine in sorted({engine_of(e) for e in entries}):
+            report["by_engine"][engine] = summarize(
+                [e for e in entries if engine_of(e) == engine]
+            )
         return report
+
+
+# Keys of the agent statistics that the log keeps.
+AGENT_STAT_KEYS = (
+    "steps",
+    "step_target",
+    "tokens",
+    "tool_calls",
+    "invalid_tool_calls",
+    "duplicate_tool_calls",
+    "ignored_tool_calls",
+    "forced_submit",
+    "stop_reason",
+    "dropped_findings",
+    "duration_sec",
+    "fallback",
+    "fallback_reason",
+)
+
+
+def engine_of(entry: dict) -> str:
+    return str((entry.get("metadata") or {}).get("engine") or "unknown")
+
+
+def percentile(values: list, percent: float):
+    """Return the value at the percentile (nearest rank), or None."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = max(1, -(-len(ordered) * percent // 100))  # Round up.
+    return ordered[int(rank) - 1]
+
+
+def _ratio(numerator: float, denominator: float):
+    return numerator / denominator if denominator else None
+
+
+def summarize(entries: list) -> dict:
+    """Summarize log entries. Old entries without the newer fields are accepted."""
+    total = len(entries)
+    results = [e["result"] for e in entries]
+    successful = sum(1 for r in results if r.get("status") == "success")
+    durations = [
+        e["metadata"]["duration_sec"]
+        for e in entries
+        if isinstance(e.get("metadata"), dict)
+        and isinstance(e["metadata"].get("duration_sec"), (int, float))
+    ]
+    agent = [e["agent"] for e in entries if isinstance(e.get("agent"), dict)]
+    agent = [a for a in agent if isinstance(a.get("steps"), (int, float))]
+    tokens = [a["tokens"] for a in agent if isinstance(a.get("tokens"), (int, float))]
+    calls = sum(a.get("tool_calls") or 0 for a in agent)
+    invalid = sum(a.get("invalid_tool_calls") or 0 for a in agent)
+    critical = sum(r.get("critical_count", 0) for r in results)
+    warnings = sum(r.get("warning_count", 0) for r in results)
+
+    return {
+        "total_reviews": total,
+        "successful_reviews": successful,
+        "unavailable_reviews": sum(
+            1 for r in results if r.get("status") == "model_unavailable"
+        ),
+        "success_rate": _ratio(successful * 100, total) or 0,
+        "total_critical_issues": critical,
+        "total_warnings": warnings,
+        "avg_critical_per_review": _ratio(critical, total) or 0,
+        "avg_warnings_per_review": _ratio(warnings, total) or 0,
+        "median_duration_sec": percentile(durations, 50),
+        "p90_duration_sec": percentile(durations, 90),
+        "agent_reviews": len(agent),
+        "median_steps": percentile([a["steps"] for a in agent], 50),
+        "p90_steps": percentile([a["steps"] for a in agent], 90),
+        "median_tokens": percentile(tokens, 50),
+        "p90_tokens": percentile(tokens, 90),
+        "total_tokens": sum(tokens),
+        "invalid_call_rate": _ratio(invalid, calls + invalid),
+        "forced_submit_rate": _ratio(
+            sum(1 for a in agent if a.get("forced_submit")), len(agent)
+        ),
+        "fallback_rate": _ratio(sum(1 for a in agent if a.get("fallback")), len(agent)),
+    }
+
+
+def _fmt(value, unit: str = "", digits: int = 1) -> str:
+    if value is None:
+        return "-"
+    return f"{value:.{digits}f}{unit}" if digits else f"{value:.0f}{unit}"
+
+
+def _pct(value) -> str:
+    return "-" if value is None else f"{value * 100:.0f}%"
+
+
+def format_summary(summary: dict, indent: str = "") -> list:
+    """Return the lines of the text report for one summary."""
+    duration = (
+        f"{_fmt(summary['median_duration_sec'], ' s')} / "
+        f"{_fmt(summary['p90_duration_sec'], ' s')}"
+    )
+    lines = [
+        f"Total Reviews: {summary['total_reviews']}",
+        f"Success Rate: {summary['success_rate']:.1f}%",
+        f"Model Unavailable: {summary['unavailable_reviews']}",
+        f"Total Critical Issues: {summary['total_critical_issues']}",
+        f"Total Warnings: {summary['total_warnings']}",
+        f"Avg Critical/Review: {summary['avg_critical_per_review']:.1f}",
+        f"Avg Warnings/Review: {summary['avg_warnings_per_review']:.1f}",
+        f"Time (median / p90): {duration}",
+    ]
+    if summary["agent_reviews"]:
+        steps = f"{_fmt(summary['median_steps'], '', 0)} / {_fmt(summary['p90_steps'], '', 0)}"
+        tokens = f"{_fmt(summary['median_tokens'], '', 0)} / {_fmt(summary['p90_tokens'], '', 0)}"
+        lines += [
+            f"Agent reviews: {summary['agent_reviews']}",
+            f"Steps (median / p90): {steps}",
+            f"Tokens (median / p90): {tokens}",
+            f"Tokens in total: {summary['total_tokens']}",
+            f"Invalid tool calls: {_pct(summary['invalid_call_rate'])}",
+            f"Reviews that hit a budget: {_pct(summary['forced_submit_rate'])}",
+            f"Reviews that fell back to classic: {_pct(summary['fallback_rate'])}",
+        ]
+    return [indent + line for line in lines]
 
 
 def main():
@@ -251,6 +356,9 @@ def main():
     report_parser = subparsers.add_parser("report", help="Generate monitoring report")
     report_parser.add_argument(
         "--days", type=int, default=7, help="Number of days to include in report"
+    )
+    report_parser.add_argument(
+        "--json", action="store_true", help="Print the report as JSON"
     )
 
     args = parser.parse_args()
@@ -285,19 +393,27 @@ def main():
             print("")
 
     elif args.command == "report":
+        report = monitor.generate_report(args.days)
+
+        if args.json:
+            print(json.dumps(report, indent=2))
+            return
+
         print(f"📊 LLM Code Review Report (Last {args.days} days)")
         print("=" * 50)
 
-        report = monitor.generate_report(args.days)
+        if report["summary"]["total_reviews"] == 0:
+            print("No reviews in this period.")
+            print(
+                "Turn on the log with monitoring.enabled in the config "
+                "or with the environment variable LLM_MONITORING=1."
+            )
+            return
 
-        summary = report["summary"]
-        print(f"Total Reviews: {summary['total_reviews']}")
-        print(f"Success Rate: {summary['success_rate']:.1f}%")
-        print(f"Model Unavailable: {summary['unavailable_reviews']}")
-        print(f"Total Critical Issues: {summary['total_critical_issues']}")
-        print(f"Total Warnings: {summary['total_warnings']}")
-        print(f"Avg Critical/Review: {summary['avg_critical_per_review']:.1f}")
-        print(f"Avg Warnings/Review: {summary['avg_warnings_per_review']:.1f}")
+        print("\n".join(format_summary(report["summary"])))
+        for engine, summary in report["by_engine"].items():
+            print(f"\nEngine: {engine}")
+            print("\n".join(format_summary(summary, "  ")))
 
 
 if __name__ == "__main__":

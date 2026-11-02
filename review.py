@@ -8,6 +8,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 from typing import Dict, Any
 from pathlib import Path
 from config import ReviewConfig
@@ -149,6 +150,7 @@ class ReviewCLI:
 
         try:
             # Perform review
+            started = time.monotonic()
             if parsed_args.offline:
                 self.engine_used = "static"
                 result = self._run_offline_review(parsed_args)
@@ -161,6 +163,8 @@ class ReviewCLI:
                 else:
                     self.engine_used = "classic"
                     result = self.reviewer.review_diff(diff_content)
+
+            self._log_monitoring(result, parsed_args, time.monotonic() - started)
 
             # Output results
             self._output_results(result, parsed_args)
@@ -311,6 +315,31 @@ Examples:
             return False
 
         return True
+
+    def _log_monitoring(self, result: ReviewResult, args, duration: float) -> None:
+        """Write the review to the monitoring log, if the log is on.
+
+        A failure here never changes the result of the review.
+        """
+        if not self.config.get_monitoring_enabled():
+            return
+        try:
+            from monitor import MonitoringUtils
+
+            mode = args.mode or ("range" if args.base else "staged")
+            MonitoringUtils(self.config).log_review_result(
+                result,
+                {
+                    "engine": self.engine_used,
+                    "duration_sec": round(duration, 2),
+                    "mode": mode,
+                    "model": self.config.get_model(),
+                },
+            )
+        except Exception as error:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "Could not write the review log: %s", error
+            )
 
     def _load_diff(self, args) -> tuple[list, str]:
         """Return (parsed_files, formatted_diff) for the requested diff."""

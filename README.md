@@ -1,6 +1,6 @@
 # LLM Code Review System
 
-Automated code review powered by LLM. Works with any OpenAI-compatible API (OpenAI, Anthropic via OpenRouter, local Ollama, etc.).
+Automated code review powered by LLM. Works with any OpenAI-compatible API (OpenAI, local Ollama, vLLM, SGLang, etc.).
 
 ## Features
 
@@ -86,12 +86,15 @@ export LLM_BASE_URL="https://api.openai.com/v1"
 export LLM_MODEL="gpt-4"
 ```
 
-### Anthropic (via OpenRouter)
+### Your own server (vLLM, SGLang)
 ```bash
-export LLM_API_KEY="your-openrouter-key"
-export LLM_BASE_URL="https://openrouter.ai/api/v1"
-export LLM_MODEL="anthropic/claude-sonnet-4"
+export LLM_API_KEY="any-non-empty-string"
+export LLM_BASE_URL="http://your-server:port/v1"
+export LLM_MODEL="your-model-name"
 ```
+For a Qwen model, set `llm.extra_body` in `review_config.json` to turn thinking off, for example
+`{"chat_template_kwargs": {"enable_thinking": false}}`. The agent engine needs a model that supports
+tool calling. Run `llm-code-review --test-tools` to check it.
 
 ### Local Ollama
 ```bash
@@ -230,6 +233,75 @@ llm-code-review --mode staged --context 20
 - `review_config_rust_example.json` - Rust project with unsafe block detection
 - `custom_prompt_example.txt` - Custom prompt template examples
 
+## Review Engines
+
+Two engines review a change.
+
+| Engine | How it works | Use it when |
+|--------|--------------|-------------|
+| `classic` (default) | Sends the diff in one prompt | The change is small and you want the lowest cost and time |
+| `agent` | The model reads files, searches the code and checks the history with tools, then sends its findings | A problem can depend on code outside the diff, or you want fewer false alarms |
+
+Choose the engine with `--engine agent`, with `LLM_ENGINE=agent`, or with `"agent": {"enabled": true}`
+in `review_config.json`. The flag wins over the variable, and the variable wins over the config.
+If the agent fails, the review falls back to the classic engine, and then to static analysis.
+
+**Tools of the agent.** All tools only read. They use no shell. They refuse paths outside the
+repository, symlinks, binary files and secret files (`.env*`, `*.pem`, `id_rsa*` and others).
+
+| Tool | What it does |
+|------|--------------|
+| `list_changed_files`, `get_diff` | Show the changed files and the numbered diff |
+| `read_file` | Read lines of a file (a window of 300 lines if you give no range) |
+| `grep`, `find_files`, `find_definition` | Search the repository |
+| `git_log`, `git_blame` | Show the history of a file or of some lines |
+
+**Settings** (config key `agent`):
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `false` | Use the agent engine when no flag or variable names an engine |
+| `max_steps` | `20` | Steps of exploration. The flag is `--max-steps` |
+| `max_total_tokens` | `1000000` | Tokens for one review (the sum over all steps) |
+| `wall_timeout_sec` | `300` | Time for one review. The flag is `--wall-timeout` |
+| `max_tool_output_chars` | `32000` | The agent receives at most this many characters from one tool call |
+| `max_grep_matches` | `50` | Matches that one search returns |
+| `read_default_lines` | `300` | Lines that `read_file` returns if you give no range |
+| `max_read_scan_bytes` | `5000000` | The agent reads at most this much of one file |
+
+When a budget ends, the agent must send the findings that it has. A step that only repeats earlier
+tool calls counts as a repeat, and two repeats in a row end the review.
+
+**See what the agent does.** `--trace` prints one line for each tool call. `--trace-llm` prints each
+request and each response of the model, with the tool calls. The API key is never printed.
+
+**Prompts.** Every prompt is a text file in `prompts/`. Edit a file to change the prompt, and keep the
+placeholders, for example `{step_target}`. The agent prompt gets checks for Django, Go and Rust files
+(config `prompt.language_blocks`: `"auto"`, a list such as `["rust"]`, or `[]`) and your project rules
+(`prompt.custom_*`, `prompt.additional_instructions`).
+
+## Monitoring
+
+Turn on the review log with `"monitoring": {"enabled": true}` in `review_config.json` or with
+`LLM_MONITORING=1`. Each review writes one line to `logs/reviews_YYYYMMDD.jsonl` (the folder is
+`monitoring.log_dir`). The line holds the engine, the time, the mode, the counts of findings and, for the
+agent, the steps, the tokens and the reason why the review stopped. It holds no code.
+
+```bash
+python monitor.py report --days 7          # Totals and one part for each engine
+python monitor.py report --days 7 --json   # The same as JSON
+```
+
+The report shows the median and the 90th percentile of time, steps and tokens, the share of invalid
+tool calls, the share of reviews that hit a budget, and the share of reviews that fell back to the
+classic engine. If a write to the log fails, the review is not affected.
+
+## Evaluation
+
+`python -m evaluation.run_eval --runs 3` runs both engines on 16 golden cases (changes with a known
+problem and clean changes that look risky) and prints recall, precision, false positives, time, steps
+and tokens. See `evaluation/README.md` to add your own cases.
+
 ## Exit Codes
 
 The review is advisory. By default (`--fail-on none`) the exit code is 0 whenever a
@@ -279,8 +351,6 @@ Go to your repository **Settings → Secrets and variables → Actions** and add
 | Provider | `LLM_API_KEY` | `LLM_BASE_URL` | `LLM_MODEL` |
 |----------|---------------|-----------------|--------------|
 | OpenAI | `sk-...` | `https://api.openai.com/v1` | `gpt-4` |
-| Anthropic (OpenRouter) | OpenRouter key | `https://openrouter.ai/api/v1` | `anthropic/claude-sonnet-4` |
-| Anthropic (OpenCode) | OpenCode key | `https://api.opencode.ai/v1` | `anthropic/claude-sonnet-4` |
 | Local / self-hosted | any non-empty string | `http://your-server:port/v1` | your model name |
 
 ### Step 2: Create Workflow File
