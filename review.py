@@ -60,6 +60,22 @@ class ReviewCLI:
         self.reviewer.trace = self.trace
         self.reviewer.trace_llm = self.trace_llm
 
+        # Apply the agent budgets from the command line
+        for value, key, name in (
+            (getattr(parsed_args, "max_steps", None), "max_steps", "--max-steps"),
+            (
+                getattr(parsed_args, "wall_timeout", None),
+                "wall_timeout_sec",
+                "--wall-timeout",
+            ),
+        ):
+            if value is None:
+                continue
+            if value < 1:
+                print(f"Error: {name} must be 1 or more.", file=sys.stderr)
+                return 2
+            self.config.config.setdefault("agent", {})[key] = value
+
         # Resolve engine and failure policy
         try:
             engine = self.config.get_engine(getattr(parsed_args, "engine", None))
@@ -230,6 +246,19 @@ Examples:
             "--offline",
             action="store_true",
             help="Run static analysis only, without LLM (forces docstring checks)",
+        )
+
+        parser.add_argument(
+            "--max-steps",
+            type=int,
+            metavar="N",
+            help="Agent engine: maximum number of exploration steps (config agent.max_steps)",
+        )
+        parser.add_argument(
+            "--wall-timeout",
+            type=int,
+            metavar="SECONDS",
+            help="Agent engine: time limit for one review (config agent.wall_timeout_sec)",
         )
 
         # Context lines for diff

@@ -48,13 +48,13 @@
 - [x] Тюнінг під Qwen: правило про формат повідомлення, 2 приклади в `agent_system.md` (оцінка впливу — у фазі 7)
 
 ## Фаза 6 — GitHub Action
-- [ ] Inputs `engine`, `max_steps`, `wall_timeout`; прибрати `fail_on_critical`, `strict`, крок «Check for failures»
-- [ ] `continue-on-error`, job завжди success, помилка — рядок у PR-коментарі
-- [ ] Прибрати `REQUEST_CHANGES`, лише `COMMENT`; один `createReview` з масивом comments
-- [ ] Передавати `${{ inputs.* }}` через `env:` (shell-ін'єкція в `action.yml`)
-- [ ] `checkout` з `ref: head.sha`, `timeout-minutes`, fork-PR без секретів — тихий skip
-- [ ] README: не додавати job у required checks; оновити `examples/*.yml`
-- [ ] Self-test workflow: matrix agent vs classic
+- [x] Inputs `engine`, `max_steps`, `wall_timeout`; прибрати `fail_on_critical`, `strict`, крок «Check for failures»
+- [x] `continue-on-error`, job завжди success, помилка — рядок у PR-коментарі
+- [x] Прибрати `REQUEST_CHANGES`, лише `COMMENT`; один `createReview` з масивом comments
+- [x] Передавати `${{ inputs.* }}` через `env:` (shell-ін'єкція в `action.yml`)
+- [x] `checkout` з `ref: head.sha`, `timeout-minutes`, fork-PR без секретів — тихий skip
+- [x] README: не додавати job у required checks; оновити `examples/*.yml`
+- [x] Self-test workflow: matrix agent vs classic
 
 ## Фаза 7 — Оцінка і перемикання
 - [ ] Золоті PR/diff (6–10): знайдені баги, хибні спрацювання, кроки, токени, час, частка невалідних tool-calls

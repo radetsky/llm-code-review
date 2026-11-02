@@ -98,6 +98,22 @@ results are still in `agent_tools.py` and `agent_core.py`.
 Engines: `classic` (single prompt, default) and `agent` (tool-calling loop).
 Degradation: agent -> classic (same model) -> static analysis.
 
+## GitHub Action
+
+`action.yml` is a composite action. The review is advisory: no step fails the job.
+An empty `api_key` (a pull request from a fork) skips the action. A failed review
+becomes one line in the pull request comment. The action posts reviews with the
+event `COMMENT` only: one summary comment (`scripts/post_review.js`, function
+`postSummary`) and one review with inline comments (`postInlineReview`) on lines
+that the diff shows. Rules for changes to `action.yml`:
+
+- Never write `${{ ... }}` in a `run:` or `script:` block. Pass every value
+  through `env:`. `test_action.py` checks this.
+- The action runs `scripts/read_result.py` to read the result of `review.py`.
+- `requirements-action.txt` must list every third-party module that the runtime
+  files import. `test_action.py` checks this.
+- JavaScript tests: `node --test scripts/post_review.test.js` (also run by pytest).
+
 ## Exit Codes
 
 The review is advisory. With the default `--fail-on none` the exit code is 0

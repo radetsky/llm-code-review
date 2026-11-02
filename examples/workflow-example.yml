@@ -1,5 +1,7 @@
 # Example workflow for using LLM Code Review action
 # Copy this to your repository: .github/workflows/llm-code-review.yml
+#
+# The review is advisory and never fails the job. Do not add it to the required checks.
 
 name: LLM Code Review
 
@@ -13,12 +15,16 @@ jobs:
   code-review:
     name: LLM Code Review
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history needed for diff
+          fetch-depth: 0 # Full history needed for diff
 
       - name: Run LLM Code Review
         uses: radetsky/llm-code-review@main
@@ -28,8 +34,8 @@ jobs:
           # base_url: ${{ secrets.LLM_BASE_URL }}
           # model: ${{ secrets.LLM_MODEL }}
 
-          # Optional: strict mode (fail on warnings too)
-          # strict: 'true'
+          # Optional: use the agent engine (default: classic)
+          # engine: agent
 
           # Optional: disable PR comments
           # post_comment: 'false'

@@ -7,6 +7,10 @@
 # Optional secrets:
 #   LLM_BASE_URL - Custom API endpoint (default: from action config)
 #   LLM_MODEL - Model name to use (default: from action config)
+#
+# The review is advisory. The action never fails the job, so do not add this
+# job to the required checks of a branch. A pull request from a fork has no
+# access to secrets: the action skips the review without an error.
 
 name: LLM Code Review
 
@@ -18,6 +22,7 @@ jobs:
   code-review:
     name: AI Code Review
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write
@@ -26,7 +31,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0 # The review needs the full history to compute the diff.
 
       - name: Run LLM Code Review
         uses: radetsky/llm-code-review@main

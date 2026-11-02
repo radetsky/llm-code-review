@@ -1,58 +1,74 @@
 name: 'LLM Code Review'
-description: 'AI-powered code review using LLM for pull requests and commits'
+description: 'Advisory AI code review for pull requests. It posts comments and never fails the job.'
 author: 'llm-code-review'
 
 branding:
   icon: 'code'
   color: 'blue'
 
+# The review is advisory. No step of this action fails the job:
+#   - A missing API key (for example a pull request from a fork) skips the action.
+#   - A failed review becomes a line in the pull request comment.
+#   - The action posts reviews with the event COMMENT only.
+# Do not add the job of this action to the required checks of a branch.
+# Workflow values go into the environment of a step. Never write ${{ inputs.* }}
+# in a script, because the text of the input would run as code.
+
 inputs:
   api_key:
-    description: 'API key for LLM service'
-    required: true
+    description: 'API key for the LLM service. If it is empty, the action skips the review.'
+    required: false
   base_url:
-    description: 'LLM API base URL (optional, uses config default if not set)'
+    description: 'LLM API base URL (optional, uses the config default if not set)'
     required: false
   model:
-    description: 'LLM model name (optional, uses config default if not set)'
+    description: 'LLM model name (optional, uses the config default if not set)'
+    required: false
+  engine:
+    description: 'Review engine: classic (one prompt) or agent (tool-calling loop). Default: classic'
+    required: false
+    default: 'classic'
+  max_steps:
+    description: 'Agent engine: maximum number of steps (optional, default from the config)'
+    required: false
+  wall_timeout:
+    description: 'Agent engine: time limit in seconds for one review (optional, default from the config)'
     required: false
   mode:
-    description: 'Review mode: staged, unstaged, all (default: use base/head for PRs)'
+    description: 'Review mode: staged, unstaged, all (default: use base/head for pull requests)'
     required: false
   base:
-    description: 'Base commit/branch for diff (auto-detected for PRs)'
+    description: 'Base commit/branch for the diff (found automatically for pull requests)'
     required: false
   head:
-    description: 'Head commit/branch for diff (auto-detected for PRs)'
+    description: 'Head commit/branch for the diff (found automatically for pull requests)'
     required: false
-  strict:
-    description: 'Fail on warnings too (default: false)'
-    required: false
-    default: 'false'
   post_comment:
-    description: 'Post review results as PR comment (default: true)'
-    required: false
-    default: 'true'
-  fail_on_critical:
-    description: 'Fail the action if critical issues found (default: true)'
+    description: 'Post the result as a pull request comment (default: true)'
     required: false
     default: 'true'
   inline_comments:
-    description: 'Post inline review comments on specific code lines (default: true)'
+    description: 'Post inline comments on the changed lines (default: true)'
     required: false
     default: 'true'
   code_suggestions:
-    description: 'Enable inline code change suggestions (default: true)'
+    description: 'Let the review propose code changes (default: true)'
     required: false
     default: 'true'
   context:
     description: 'Number of context lines around each change (default: 10)'
     required: false
+  comment_tag:
+    description: 'A short name for the comments (letters, digits, dot, dash, underscore). Use it when one pull request has more than one review, for example one for each engine.'
+    required: false
 
 outputs:
   status:
-    description: 'Review status: success, warnings, critical, error, model_unavailable'
-    value: ${{ steps.review.outputs.status }}
+    description: 'Technical status: success, model_unavailable, skipped, error'
+    value: ${{ steps.review.outputs.status || steps.settings.outputs.status }}
+  outcome:
+    description: 'Result of the review: success, warnings, critical, none (the review did not run)'
+    value: ${{ steps.review.outputs.outcome || steps.settings.outputs.outcome }}
   critical_count:
     description: 'Number of critical issues found'
     value: ${{ steps.review.outputs.critical_count }}
@@ -62,362 +78,235 @@ outputs:
   suggestion_count:
     description: 'Number of suggestions'
     value: ${{ steps.review.outputs.suggestion_count }}
+  engine:
+    description: 'Engine that made the result: classic, agent, agent->classic'
+    value: ${{ steps.review.outputs.engine }}
   result_file:
-    description: 'Path to JSON result file'
+    description: 'Path to the JSON result file'
     value: ${{ steps.review.outputs.result_file }}
 
 runs:
   using: 'composite'
   steps:
+    - name: Check settings
+      id: settings
+      shell: bash
+      env:
+        API_KEY: ${{ inputs.api_key }}
+        INPUT_ENGINE: ${{ inputs.engine }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_MAX_STEPS: ${{ inputs.max_steps }}
+        INPUT_WALL_TIMEOUT: ${{ inputs.wall_timeout }}
+        INPUT_CONTEXT: ${{ inputs.context }}
+      run: |
+        if [ -z "$API_KEY" ]; then
+          echo "::notice::The review is skipped because there is no API key. A pull request from a fork has no access to secrets."
+          {
+            echo "run=false"
+            echo "status=skipped"
+            echo "outcome=none"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        engine="$INPUT_ENGINE"
+        case "$engine" in
+          classic | agent) ;;
+          *)
+            echo "::warning::The engine is not known. The action uses classic."
+            engine="classic"
+            ;;
+        esac
+
+        mode="$INPUT_MODE"
+        case "$mode" in
+          "" | staged | unstaged | all) ;;
+          *)
+            echo "::warning::The mode is not known. The action ignores it."
+            mode=""
+            ;;
+        esac
+
+        number() {
+          # Print the value if it is a whole number of 1 or more. Otherwise print nothing.
+          if [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ]; then
+            echo "$1"
+          elif [ -n "$1" ]; then
+            echo "::warning::A numeric input is not valid. The action ignores it." >&2
+          fi
+        }
+
+        {
+          echo "run=true"
+          echo "engine=$engine"
+          echo "mode=$mode"
+          echo "max_steps=$(number "$INPUT_MAX_STEPS")"
+          echo "wall_timeout=$(number "$INPUT_WALL_TIMEOUT")"
+          echo "context=$(number "$INPUT_CONTEXT")"
+        } >> "$GITHUB_OUTPUT"
+
     - name: Setup Python
+      if: steps.settings.outputs.run == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
     - name: Install dependencies
+      if: steps.settings.outputs.run == 'true'
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         python -m pip install --upgrade pip
-        pip install -r "${{ github.action_path }}/requirements-action.txt"
+        pip install -r "$ACTION_PATH/requirements-action.txt"
 
     - name: Determine diff range
       id: diff_range
+      if: steps.settings.outputs.run == 'true'
       shell: bash
+      env:
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_HEAD: ${{ inputs.head }}
+        EVENT_NAME: ${{ github.event_name }}
+        PR_BASE: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        PUSH_BEFORE: ${{ github.event.before }}
+        PUSH_SHA: ${{ github.sha }}
       run: |
-        if [ -n "${{ inputs.base }}" ] && [ -n "${{ inputs.head }}" ]; then
-          echo "base=${{ inputs.base }}" >> $GITHUB_OUTPUT
-          echo "head=${{ inputs.head }}" >> $GITHUB_OUTPUT
-          echo "Using provided base/head"
-        elif [ "${{ github.event_name }}" == "pull_request" ]; then
-          echo "base=${{ github.event.pull_request.base.sha }}" >> $GITHUB_OUTPUT
-          echo "head=${{ github.event.pull_request.head.sha }}" >> $GITHUB_OUTPUT
-          echo "Using PR base/head"
-        elif [ "${{ github.event_name }}" == "push" ]; then
-          echo "base=${{ github.event.before }}" >> $GITHUB_OUTPUT
-          echo "head=${{ github.sha }}" >> $GITHUB_OUTPUT
-          echo "Using push before/after"
+        if [ -n "$INPUT_BASE" ] && [ -n "$INPUT_HEAD" ]; then
+          base="$INPUT_BASE"; head="$INPUT_HEAD"
+        elif [ "$EVENT_NAME" == "pull_request" ]; then
+          base="$PR_BASE"; head="$PR_HEAD"
+        elif [ "$EVENT_NAME" == "push" ]; then
+          base="$PUSH_BEFORE"; head="$PUSH_SHA"
         else
-          echo "base=HEAD~1" >> $GITHUB_OUTPUT
-          echo "head=HEAD" >> $GITHUB_OUTPUT
-          echo "Using HEAD~1..HEAD"
+          base="HEAD~1"; head="HEAD"
         fi
+        # An empty value, a value that starts with "-" (a git option) and the
+        # zero SHA of a new branch cannot be a base. Use the previous commit.
+        if [[ -z "$base" || "$base" == -* || "$base" =~ ^0+$ ]]; then
+          echo "::warning::The base is not valid. The action uses HEAD~1."
+          base="HEAD~1"
+        fi
+        if [[ -z "$head" || "$head" == -* ]]; then
+          echo "::warning::The head is not valid. The action uses HEAD."
+          head="HEAD"
+        fi
+        {
+          echo "base=$base"
+          echo "head=$head"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Fetch the commits of the diff
+      if: steps.settings.outputs.run == 'true' && steps.settings.outputs.mode == ''
+      continue-on-error: true
+      shell: bash
+      env:
+        BASE: ${{ steps.diff_range.outputs.base }}
+        HEAD: ${{ steps.diff_range.outputs.head }}
+      run: |
+        # The diff needs both commits and their common ancestor.
+        if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+          git fetch --no-tags --unshallow origin || git fetch --no-tags --depth=500 origin || true
+        fi
+        for ref in "$BASE" "$HEAD"; do
+          git cat-file -e "${ref}^{commit}" 2>/dev/null || git fetch --no-tags origin "$ref" || true
+        done
 
     - name: Run LLM Code Review
       id: review
+      if: steps.settings.outputs.run == 'true'
+      continue-on-error: true
       shell: bash
       env:
         LLM_API_KEY: ${{ inputs.api_key }}
         LLM_BASE_URL: ${{ inputs.base_url }}
         LLM_MODEL: ${{ inputs.model }}
         LLM_CODE_SUGGESTIONS: ${{ inputs.code_suggestions }}
+        ACTION_PATH: ${{ github.action_path }}
+        ENGINE: ${{ steps.settings.outputs.engine }}
+        MODE: ${{ steps.settings.outputs.mode }}
+        MAX_STEPS: ${{ steps.settings.outputs.max_steps }}
+        WALL_TIMEOUT: ${{ steps.settings.outputs.wall_timeout }}
+        CONTEXT: ${{ steps.settings.outputs.context }}
+        BASE: ${{ steps.diff_range.outputs.base }}
+        HEAD: ${{ steps.diff_range.outputs.head }}
       run: |
-        RESULT_FILE="${{ runner.temp }}/llm-review-result.json"
+        RESULT_FILE="$RUNNER_TEMP/llm-review-result.json"
+        ERROR_FILE="$RUNNER_TEMP/llm-review-error.txt"
 
-        ARGS="--format json"
-
-        if [ -n "${{ inputs.mode }}" ]; then
-          ARGS="$ARGS --mode ${{ inputs.mode }}"
+        args=(--format json --engine "$ENGINE")
+        if [ -n "$MODE" ]; then
+          args+=(--mode "$MODE")
         else
-          ARGS="$ARGS --base ${{ steps.diff_range.outputs.base }} --head ${{ steps.diff_range.outputs.head }}"
+          args+=(--base "$BASE" --head "$HEAD")
         fi
+        [ -n "$CONTEXT" ] && args+=(--context "$CONTEXT")
+        [ -n "$MAX_STEPS" ] && args+=(--max-steps "$MAX_STEPS")
+        [ -n "$WALL_TIMEOUT" ] && args+=(--wall-timeout "$WALL_TIMEOUT")
 
-        if [ "${{ inputs.strict }}" == "true" ]; then
-          ARGS="$ARGS --strict"
-        fi
-
-        if [ -n "${{ inputs.context }}" ]; then
-          CONTEXT_VAL="${{ inputs.context }}"
-          if [[ "$CONTEXT_VAL" =~ ^[0-9]+$ ]]; then
-            ARGS="$ARGS --context $CONTEXT_VAL"
-          else
-            echo "Warning: invalid context value '$CONTEXT_VAL', must be a positive integer. Ignoring."
-          fi
-        fi
-
-        echo "Running: python ${{ github.action_path }}/review.py $ARGS"
-
+        echo "Running review.py with the engine $ENGINE"
         set +e
-        python "${{ github.action_path }}/review.py" $ARGS > "$RESULT_FILE"
-        EXIT_CODE=$?
+        timeout 1500 python "$ACTION_PATH/review.py" "${args[@]}" > "$RESULT_FILE" 2> "$ERROR_FILE"
+        exit_code=$?
         set -e
+        echo "Exit code: $exit_code"
+        tail -n 20 "$ERROR_FILE" || true
 
-        echo "Exit code: $EXIT_CODE"
-        echo "result_file=$RESULT_FILE" >> $GITHUB_OUTPUT
+        {
+          echo "result_file=$RESULT_FILE"
+          python "$ACTION_PATH/scripts/read_result.py" "$RESULT_FILE" "$ERROR_FILE" "$exit_code" || echo "status=error"
+        } >> "$GITHUB_OUTPUT"
+        exit 0
 
-        if [ -f "$RESULT_FILE" ] && python -c "import json; json.load(open('$RESULT_FILE'))" 2>/dev/null; then
-          CRITICAL_COUNT=$(python -c "import json; data=json.load(open('$RESULT_FILE')); print(len(data.get('critical_issues', [])))")
-          WARNING_COUNT=$(python -c "import json; data=json.load(open('$RESULT_FILE')); print(len(data.get('warnings', [])))")
-          SUGGESTION_COUNT=$(python -c "import json; data=json.load(open('$RESULT_FILE')); print(len(data.get('suggestions', [])))")
-          STATUS=$(python -c "import json; data=json.load(open('$RESULT_FILE')); print(data.get('status', 'unknown'))")
-        else
-          CRITICAL_COUNT=0
-          WARNING_COUNT=0
-          SUGGESTION_COUNT=0
-          STATUS="error"
-          echo "Failed to parse review results"
-          cat "$RESULT_FILE" || true
-        fi
-
-        echo "critical_count=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
-        echo "warning_count=$WARNING_COUNT" >> $GITHUB_OUTPUT
-        echo "suggestion_count=$SUGGESTION_COUNT" >> $GITHUB_OUTPUT
-        echo "status=$STATUS" >> $GITHUB_OUTPUT
-
-        echo "Review Summary:"
-        echo "  Status: $STATUS"
-        echo "  Critical: $CRITICAL_COUNT"
-        echo "  Warnings: $WARNING_COUNT"
-        echo "  Suggestions: $SUGGESTION_COUNT"
+    - name: Show the result
+      if: always() && steps.settings.outputs.run == 'true'
+      shell: bash
+      env:
+        STATUS: ${{ steps.review.outputs.status }}
+        OUTCOME: ${{ steps.review.outputs.outcome }}
+        ENGINE: ${{ steps.review.outputs.engine }}
+        CRITICAL: ${{ steps.review.outputs.critical_count }}
+        WARNINGS: ${{ steps.review.outputs.warning_count }}
+        SUGGESTIONS: ${{ steps.review.outputs.suggestion_count }}
+        REVIEW_ERROR: ${{ steps.review.outputs.error }}
+      run: |
+        echo "Review summary"
+        echo "  Status: ${STATUS:-not available}"
+        echo "  Outcome: ${OUTCOME:-not available}"
+        echo "  Engine: ${ENGINE:-not available}"
+        echo "  Critical: ${CRITICAL:-0}, warnings: ${WARNINGS:-0}, suggestions: ${SUGGESTIONS:-0}"
+        [ -n "$REVIEW_ERROR" ] && echo "  Error: $REVIEW_ERROR"
+        exit 0
 
     - name: Post PR Comment
-      if: inputs.post_comment == 'true' && github.event_name == 'pull_request'
+      if: always() && steps.settings.outputs.run == 'true' && inputs.post_comment == 'true' && github.event_name == 'pull_request'
+      continue-on-error: true
       uses: actions/github-script@v7
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        RESULT_FILE: ${{ steps.review.outputs.result_file }}
+        REVIEW_STATUS: ${{ steps.review.outputs.status }}
+        REVIEW_OUTCOME: ${{ steps.review.outputs.outcome }}
+        REVIEW_ENGINE: ${{ steps.review.outputs.engine }}
+        REVIEW_ERROR: ${{ steps.review.outputs.error }}
+        COMMENT_TAG: ${{ inputs.comment_tag }}
       with:
         script: |
-          const fs = require('fs');
-
-          let reviewData = {};
-          let commentText = '';
-
-          try {
-            const resultFile = '${{ steps.review.outputs.result_file }}';
-            const reviewResult = fs.readFileSync(resultFile, 'utf8');
-            reviewData = JSON.parse(reviewResult);
-
-            const criticalCount = ${{ steps.review.outputs.critical_count }};
-            const warningCount = ${{ steps.review.outputs.warning_count }};
-            const suggestionCount = ${{ steps.review.outputs.suggestion_count }};
-            const status = '${{ steps.review.outputs.status }}';
-
-            let statusIcon = '';
-            let statusText = '';
-            if (status === 'success') {
-              statusIcon = ':white_check_mark:';
-              statusText = 'Passed';
-            } else if (status === 'model_unavailable') {
-              statusIcon = ':warning:';
-              statusText = 'Model Unavailable (static analysis used)';
-            } else if (criticalCount > 0) {
-              statusIcon = ':x:';
-              statusText = 'Critical Issues Found';
-            } else if (warningCount > 0) {
-              statusIcon = ':warning:';
-              statusText = 'Warnings Found';
-            } else {
-              statusIcon = ':grey_question:';
-              statusText = status;
-            }
-
-            commentText = `## ${statusIcon} LLM Code Review
-
-            **Status:** ${statusText}
-
-            | Category | Count |
-            |----------|-------|
-            | Critical Issues | ${criticalCount} |
-            | Warnings | ${warningCount} |
-            | Suggestions | ${suggestionCount} |
-            `;
-
-            if (reviewData.critical_issues && reviewData.critical_issues.length > 0) {
-              commentText += '\n### Critical Issues\n';
-              reviewData.critical_issues.forEach(issue => {
-                commentText += `- :rotating_light: ${issue}\n`;
-              });
-            }
-
-            if (reviewData.warnings && reviewData.warnings.length > 0) {
-              commentText += '\n### Warnings\n';
-              reviewData.warnings.forEach(warning => {
-                commentText += `- :warning: ${warning}\n`;
-              });
-            }
-
-            if (reviewData.suggestions && reviewData.suggestions.length > 0) {
-              commentText += '\n### Suggestions\n';
-              reviewData.suggestions.forEach(suggestion => {
-                commentText += `- :bulb: ${suggestion}\n`;
-              });
-            }
-
-            if (reviewData.fallback_used) {
-              commentText += '\n> :information_source: *Static analysis was used due to LLM unavailability*\n';
-            }
-
-            commentText += '\n---\n<sub>Generated by [LLM Code Review](https://github.com/radetsky/llm-code-review)</sub>';
-
-          } catch (error) {
-            console.error('Error reading review results:', error);
-            commentText = '## :x: LLM Code Review\n\nError occurred during code review analysis.\n\n```\n' + error.message + '\n```';
-          }
-
-          try {
-            const comments = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-
-            const botComment = comments.data.find(comment =>
-              comment.user.type === 'Bot' && comment.body.includes('LLM Code Review')
-            );
-
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                comment_id: botComment.id,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: commentText
-              });
-              console.log('Updated existing comment');
-            } else {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: commentText
-              });
-              console.log('Created new comment');
-            }
-          } catch (error) {
-            console.error('Error managing PR comment:', error);
-          }
+          const lib = require(`${process.env.ACTION_PATH}/scripts/post_review.js`);
+          await lib.postSummary({ github, context, core, env: process.env });
 
     - name: Post Inline Review Comments
-      if: inputs.inline_comments == 'true' && inputs.post_comment == 'true' && github.event_name == 'pull_request'
+      if: always() && steps.settings.outputs.run == 'true' && inputs.inline_comments == 'true' && inputs.post_comment == 'true' && github.event_name == 'pull_request'
+      continue-on-error: true
       uses: actions/github-script@v7
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        RESULT_FILE: ${{ steps.review.outputs.result_file }}
+        REVIEW_ERROR: ${{ steps.review.outputs.error }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        COMMENT_TAG: ${{ inputs.comment_tag }}
       with:
         script: |
-          const fs = require('fs');
-
-          let reviewData = {};
-          try {
-            const resultFile = '${{ steps.review.outputs.result_file }}';
-            const reviewResult = fs.readFileSync(resultFile, 'utf8');
-            reviewData = JSON.parse(reviewResult);
-          } catch (error) {
-            console.log('Could not read review results for inline comments:', error.message);
-            return;
-          }
-
-          const linePattern = /^(.+?):(\d+):\s*(.+)$/;
-          const comments = [];
-
-          const categories = [
-            { key: 'critical_issues', icon: '🚨' },
-            { key: 'warnings', icon: '⚠️' },
-            { key: 'suggestions', icon: '💡' },
-          ];
-
-          for (const { key, icon } of categories) {
-            const issues = reviewData[key] || [];
-            for (const issue of issues) {
-              const match = issue.match(linePattern);
-              if (match) {
-                comments.push({
-                  path: match[1],
-                  line: parseInt(match[2], 10),
-                  body: `${icon} ${match[3]}`,
-                });
-              }
-            }
-          }
-
-          // Code suggestions with GitHub-native suggestion blocks
-          const codeSuggestions = reviewData.code_suggestions || [];
-          for (const cs of codeSuggestions) {
-            const body = `💡 ${cs.description}\n\n\`\`\`suggestion\n${cs.suggested_code}\n\`\`\``;
-            const comment = {
-              path: cs.file,
-              line: cs.line_end,
-              body: body,
-            };
-            if (cs.line_start !== cs.line_end) {
-              comment.start_line = cs.line_start;
-            }
-            comments.push(comment);
-          }
-
-          if (comments.length === 0) {
-            console.log('No inline comments to post (no issues with file:line format)');
-            return;
-          }
-
-          const commitId = '${{ github.event.pull_request.head.sha }}';
-          const prNumber = context.issue.number;
-          const owner = context.repo.owner;
-          const repo = context.repo.repo;
-
-          // Post individual inline comments
-          let posted = 0;
-          let skipped = 0;
-
-          for (const comment of comments) {
-            try {
-              await github.rest.pulls.createReviewComment({
-                owner,
-                repo,
-                pull_number: prNumber,
-                commit_id: commitId,
-                path: comment.path,
-                line: comment.line,
-                body: comment.body,
-              });
-              posted++;
-            } catch (err) {
-              skipped++;
-              console.log(`Skipped comment on ${comment.path}:${comment.line} - ${err.message}`);
-            }
-          }
-
-          console.log(`Inline comments: ${posted} posted, ${skipped} skipped`);
-
-          // Create a review to mark the PR as reviewed
-          try {
-            const criticalCount = ${{ steps.review.outputs.critical_count }};
-            const warningCount = ${{ steps.review.outputs.warning_count }};
-            const event = criticalCount > 0 ? 'REQUEST_CHANGES' : 'COMMENT';
-            const body = criticalCount > 0
-              ? `LLM Code Review found ${criticalCount} critical issue(s) and ${warningCount} warning(s).`
-              : warningCount > 0
-                ? `LLM Code Review found ${warningCount} warning(s).`
-                : 'LLM Code Review passed.';
-
-            await github.rest.pulls.createReview({
-              owner,
-              repo,
-              pull_number: prNumber,
-              commit_id: commitId,
-              event: event,
-              body: body,
-            });
-            console.log(`Created review with event: ${event}`);
-          } catch (reviewError) {
-            console.log('Failed to create review:', reviewError.message);
-          }
-
-    - name: Check for failures
-      if: inputs.fail_on_critical == 'true'
-      shell: bash
-      run: |
-        CRITICAL_COUNT=${{ steps.review.outputs.critical_count }}
-        STATUS=${{ steps.review.outputs.status }}
-        STRICT="${{ inputs.strict }}"
-        WARNING_COUNT=${{ steps.review.outputs.warning_count }}
-
-        if [ "$CRITICAL_COUNT" -gt 0 ]; then
-          echo "Critical issues found: $CRITICAL_COUNT"
-          exit 1
-        fi
-
-        if [ "$STRICT" == "true" ] && [ "$WARNING_COUNT" -gt 0 ]; then
-          echo "Warnings found (strict mode): $WARNING_COUNT"
-          exit 1
-        fi
-
-        if [ "$STATUS" == "error" ]; then
-          echo "Review failed with error"
-          exit 1
-        fi
-
-        echo "Review passed"
+          const lib = require(`${process.env.ACTION_PATH}/scripts/post_review.js`);
+          await lib.postInlineReview({ github, context, core, env: process.env });

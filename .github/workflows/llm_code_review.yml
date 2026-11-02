@@ -1,5 +1,9 @@
 name: LLM Code Review (Self-test)
 
+# This workflow tests the action of this repository on its own pull requests.
+# It runs both engines, so you can compare them in the pull request comments.
+# The review is advisory. Do not add these jobs to the required checks.
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -8,18 +12,33 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: llm-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   self-review:
-    name: Self Code Review
+    name: Self review (${{ matrix.engine }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [classic, agent]
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      # A pull request from a fork has no secrets. The action skips the review.
       - name: Run LLM Code Review
         uses: ./
         with:
           api_key: ${{ secrets.LLM_API_KEY }}
           base_url: ${{ secrets.LLM_BASE_URL }}
           model: ${{ secrets.LLM_MODEL }}
+          engine: ${{ matrix.engine }}
+          comment_tag: ${{ matrix.engine }}
+          inline_comments: 'false'

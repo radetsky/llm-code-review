@@ -1,5 +1,7 @@
 """Tests for DiffParser.parse_diff on multi-file diffs."""
 
+import pytest
+
 from config import ReviewConfig
 from diff_parser import DiffParser
 
@@ -95,3 +97,14 @@ class TestContentLooksLikeHeaders:
         # Line numbers must not drift after such lines.
         assert hunk["added_lines"][-1]["line"] == 4
         assert hunk["removed_lines"][-1]["line"] == 4
+
+
+class TestRangeReferences:
+    @pytest.mark.parametrize(
+        "base,head",
+        [("--output=/tmp/x", "HEAD"), ("HEAD", "--output=/tmp/x"), ("-p", "-p")],
+    )
+    def test_reference_that_looks_like_an_option_is_refused(self, base, head):
+        parser = DiffParser(ReviewConfig())
+        with pytest.raises(ValueError, match="Invalid git reference"):
+            parser.get_diff("range", base, head)

@@ -108,7 +108,10 @@ llm-code-review --mode unstaged        # Review unstaged changes
 llm-code-review --mode all             # Review all uncommitted changes
 llm-code-review --base main --head dev # Compare branches
 llm-code-review --format json          # JSON output for CI/CD
-llm-code-review --strict               # Block on warnings too
+llm-code-review --engine agent         # Agentic review: the model reads the repository with tools
+llm-code-review --fail-on critical     # Exit 1 on critical issues (default: always exit 0)
+llm-code-review --fail-on warnings     # Exit 1 on warnings too (alias: --strict)
+llm-code-review --trace --trace-llm    # Print agent steps and the full LLM exchange
 llm-code-review --verbose              # Detailed output
 llm-code-review --offline              # Static analysis only (no API key needed)
 llm-code-review --context 15           # Use 15 context lines around each change (default: 10)
@@ -153,8 +156,8 @@ Add project-specific rules to the `prompt` section in `review_config.json`:
 ```
 
 **Options:**
-- `custom_critical_rules` - Additional rules that block commits
-- `custom_warnings` - Additional rules that warn but allow commits
+- `custom_critical_rules` - Additional rules that the review reports as critical issues
+- `custom_warnings` - Additional rules that the review reports as warnings
 - `custom_suggestions` - Additional improvement suggestions
 - `additional_instructions` - Extra context for the LLM (language, framework, etc.)
 - `custom_prompt` - Completely replace the default prompt with placeholders support (see below)
@@ -229,24 +232,29 @@ llm-code-review --mode staged --context 20
 
 ## Exit Codes
 
-| Code | Meaning | Git Hook Action |
-|------|---------|-----------------|
-| 0 | No issues | Allow commit |
-| 1 | Critical issues | Block commit |
-| 2 | Warnings only | Allow commit |
-| 3 | LLM unavailable | Allow (static fallback) |
-| 4 | Config error | Block commit |
+The review is advisory. By default (`--fail-on none`) the exit code is 0 whenever a
+review was produced. The git hooks never block a commit or a push. Use `--fail-on`
+in your own scripts if you want a failing exit code.
+
+| Code | Meaning | `--fail-on none` (default) | `--fail-on critical` / `warnings` |
+|------|---------|----------------------------|-----------------------------------|
+| 0 | No issues | yes | yes |
+| 1 | Failing findings | never | critical issues (and warnings with `warnings`) |
+| 2 | Warnings only / wrong arguments | wrong arguments only | warnings with `critical`; wrong arguments |
+| 3 | LLM unavailable (static fallback) | never (0) | yes |
+| 4 | Configuration error | yes | yes |
+| 5 | Review skipped (token limit) | never (0) | yes |
 
 ## What It Detects
 
-**Critical (blocks commit):**
+**Critical:**
 - Hardcoded credentials, API keys, secrets
 - SQL injection, XSS vulnerabilities
 - Unsafe functions (`eval()`, `exec()`, `system()`)
 - Command injection, buffer overflow risks
 - *Plus your custom critical rules*
 
-**Warnings (allows commit):**
+**Warnings:**
 - Code style issues
 - Potential bugs
 - Missing error handling
@@ -286,17 +294,18 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-permissions:
-  contents: read
-  pull-requests: write
-
 jobs:
   code-review:
     name: AI Code Review
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Run LLM Code Review
@@ -309,8 +318,24 @@ jobs:
 
 **What this does:**
 - Triggers on every pull request (open, update, reopen)
-- Checks out full git history (`fetch-depth: 0`) for diff analysis
-- Runs LLM code review and posts results as a PR comment
+- Checks out the commit of the pull request with the full git history (`fetch-depth: 0`), because the review needs the diff and the files
+- Runs the review and posts one summary comment and one review with inline comments
+
+### How the action behaves
+
+The review is advisory. No step of the action fails the job.
+
+- **No blocking.** The action posts reviews with the event `COMMENT` only. It never requests changes.
+  Do not add the job of this action to the required checks of a branch.
+- **Failures are comments.** If the review cannot run (the model is down, the output is not valid, the
+  time limit is over), the pull request comment says so in one line. The job stays green.
+- **Forks.** A pull request from a fork has no access to secrets. The action sees an empty `api_key`
+  and skips the review without an error. Do not use the event `pull_request_target` to get around this:
+  that event gives your secrets to code from the fork.
+- **One comment for each run.** A new commit updates the summary comment. Inline comments appear only
+  on lines that the diff of the pull request shows. A comment that already exists is not posted again.
+- **Safe inputs.** The action passes every input to its scripts through environment variables.
+  An input is never run as code.
 
 ### Step 3: Advanced Configuration
 
@@ -324,46 +349,69 @@ Add optional inputs to customize behavior:
           api_key: ${{ secrets.LLM_API_KEY }}
           base_url: ${{ secrets.LLM_BASE_URL }}
           model: ${{ secrets.LLM_MODEL }}
-          strict: 'true'              # Fail on warnings too (default: false)
-          post_comment: 'true'         # Post review as PR comment (default: true)
-          fail_on_critical: 'true'     # Fail action on critical issues (default: true)
-          inline_comments: 'true'      # Post inline comments on code lines (default: true)
-          code_suggestions: 'true'    # Enable code change suggestions (default: true)
+          engine: agent               # classic (default) or agent
+          max_steps: '20'             # agent only (optional)
+          wall_timeout: '300'         # agent only, seconds (optional)
+          post_comment: 'true'        # Post the summary comment (default: true)
+          inline_comments: 'true'     # Post inline comments on code lines (default: true)
+          code_suggestions: 'true'    # Let the review propose code changes (default: true)
 
       - name: Check results
         if: always()
-        run: |
-          echo "Status: ${{ steps.review.outputs.status }}"
-          echo "Critical: ${{ steps.review.outputs.critical_count }}"
-          echo "Warnings: ${{ steps.review.outputs.warning_count }}"
-          echo "Suggestions: ${{ steps.review.outputs.suggestion_count }}"
+        env:
+          STATUS: ${{ steps.review.outputs.status }}
+          OUTCOME: ${{ steps.review.outputs.outcome }}
+          CRITICAL: ${{ steps.review.outputs.critical_count }}
+        run: echo "Status: $STATUS, outcome: $OUTCOME, critical: $CRITICAL"
 ```
+
+Pass values to `run:` scripts through `env:`, as in this example. Do not write `${{ ... }}` inside a script.
+
+### Choosing an engine
+
+| Engine | What it does | When to use it |
+|--------|--------------|----------------|
+| `classic` (default) | Sends the diff in one prompt | Small changes, the lowest cost and time |
+| `agent` | The model reads files, searches the code and checks the history with tools, then submits findings | Changes whose problems depend on code outside the diff; fewer false alarms |
+
+On a set of golden cases (`evaluation/`) the agent found more problems and made far fewer false
+alarms, but it takes more time and tokens. If the agent fails, the action falls back to the classic
+engine and then to static analysis. To run both engines on one pull request, use two jobs with different
+`comment_tag` values (see `.github/workflows/llm_code_review.yml`).
 
 ### Action Inputs
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `api_key` | LLM API key | Yes | - |
+| `api_key` | LLM API key. If empty, the review is skipped | No | - |
 | `base_url` | API endpoint URL | No | config |
 | `model` | Model name | No | config |
-| `strict` | Fail on warnings | No | `false` |
-| `post_comment` | Post PR comment | No | `true` |
-| `fail_on_critical` | Fail on critical issues | No | `true` |
-| `inline_comments` | Post inline review comments on code lines | No | `true` |
-| `code_suggestions` | Enable inline code change suggestions | No | `true` |
+| `engine` | `classic` or `agent` | No | `classic` |
+| `max_steps` | Agent: maximum number of steps | No | config (`agent.max_steps`) |
+| `wall_timeout` | Agent: time limit in seconds | No | config (`agent.wall_timeout_sec`) |
+| `mode` | `staged`, `unstaged` or `all` (instead of `base`/`head`) | No | - |
+| `base`, `head` | Commits of the diff (found for pull requests and pushes) | No | - |
+| `post_comment` | Post the summary comment and the inline review | No | `true` |
+| `inline_comments` | Post inline comments on the changed lines | No | `true` |
+| `code_suggestions` | Let the review propose code changes | No | `true` |
 | `context` | Number of context lines around each change | No | `10` |
+| `comment_tag` | A short name that keeps the comments of two reviews apart | No | - |
+
+The inputs `strict` and `fail_on_critical` do not exist any more. The action never fails the job.
 
 ### Action Outputs
 
 | Output | Description |
 |--------|-------------|
-| `status` | Review status: success, warnings, critical, error |
+| `status` | Technical status: `success`, `model_unavailable`, `skipped` or `error` |
+| `outcome` | Result of the review: `success`, `warnings`, `critical`, or `none` if the review did not run |
 | `critical_count` | Number of critical issues |
 | `warning_count` | Number of warnings |
 | `suggestion_count` | Number of suggestions |
-| `result_file` | Path to JSON result file |
+| `engine` | Engine that made the result: `classic`, `agent` or `agent->classic` |
+| `result_file` | Path to the JSON result file |
 
-See `examples/` folder for more workflow examples.
+See the `examples/` folder for more workflow examples.
 
 ## Troubleshooting
 
@@ -388,16 +436,24 @@ llm-code-review/
 ├── action.yml                    # GitHub Action definition
 ├── install.sh                    # Installation script
 ├── review.py                     # CLI entry point
-├── review_core.py                # LLM integration, chunking & prompt building
+├── review_core.py                # Classic engine: LLM integration, chunking & prompt building
+├── agent_core.py                 # Agent engine: tool-calling loop, budgets, validation
+├── agent_tools.py                # Read-only tools of the agent
+├── agent_prompt.py               # Builds the system prompt of the agent
+├── diff_parser.py                # Diff parsing and safe file access (RepoSource)
+├── prompts.py, prompts/          # Every prompt is a text file
 ├── config.py                     # Configuration management
 ├── static_analyzer.py            # Fallback analysis
+├── scripts/                      # Scripts of the GitHub Action (post_review.js, read_result.py)
+├── evaluation/                   # Golden cases and the evaluation runner
 ├── review_config.json            # Your configuration
 ├── review_config_example.json    # OpenAI example
 ├── review_config_rust_example.json  # Rust project example
 ├── custom_prompt_example.txt     # Custom prompt template examples
 ├── examples/
 │   ├── workflow-basic.yml        # Basic GitHub Actions workflow
-│   └── workflow-advanced.yml     # Advanced workflow with all options
+│   ├── workflow-advanced.yml     # Advanced workflow with all options
+│   └── workflow-example.yml      # Pull request and push workflow
 └── .github/workflows/
     └── llm_code_review.yml       # Self-test workflow (uses local action)
 ```

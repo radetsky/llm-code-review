@@ -34,6 +34,9 @@ class DiffParser:
         elif mode == "all":
             return self._run_git(["diff", "HEAD", u_flag])
         elif mode == "range" and base and head:
+            # A reference that starts with "-" would be an option for git.
+            if base.startswith("-") or head.startswith("-"):
+                raise ValueError("Invalid git reference")
             return self._run_git(["diff", f"{base}...{head}", u_flag])
         else:
             raise ValueError(f"Unsupported diff mode: {mode}")

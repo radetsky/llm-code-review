@@ -1,5 +1,12 @@
 # Advanced LLM Code Review workflow with all options
 # Copy this file to your repository: .github/workflows/llm-code-review.yml
+#
+# The review is advisory. The action never fails the job and posts reviews with
+# the event COMMENT only. Do not add this job to the required checks.
+#
+# Do not use the event pull_request_target for this workflow. That event gives
+# secrets to code of a fork. With the event pull_request a fork has no secrets,
+# and the action skips the review.
 
 name: LLM Code Review
 
@@ -9,10 +16,16 @@ on:
   push:
     branches: [main, develop]
 
+# Run one review at a time for each pull request. A new commit stops the old review.
+concurrency:
+  group: llm-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   code-review:
     name: AI Code Review
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write
@@ -21,6 +34,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Run LLM Code Review
@@ -31,67 +45,45 @@ jobs:
           base_url: ${{ secrets.LLM_BASE_URL }}
           model: ${{ secrets.LLM_MODEL }}
 
-          # Fail on warnings too (default: false)
-          strict: 'false'
+          # Review engine: classic (one prompt, default) or agent (tool-calling loop).
+          engine: agent
 
-          # Post review as PR comment (default: true)
+          # Agent engine only. Leave them empty to use the values of the config.
+          max_steps: '20'
+          wall_timeout: '300'
+
+          # Post the review as a pull request comment (default: true)
           post_comment: 'true'
 
-          # Fail action if critical issues found (default: true)
-          fail_on_critical: 'true'
-
-          # Post inline comments on specific code lines (default: true)
+          # Post inline comments on the changed lines (default: true)
           inline_comments: 'true'
 
-          # Enable inline code change suggestions (default: true)
+          # Let the review propose code changes (default: true)
           code_suggestions: 'true'
+
+          # Context lines around each change (default: 10)
+          context: '10'
+
+          # Use a tag when one pull request has more than one review.
+          # comment_tag: agent
 
       - name: Review Summary
         if: always()
+        env:
+          STATUS: ${{ steps.review.outputs.status }}
+          OUTCOME: ${{ steps.review.outputs.outcome }}
+          ENGINE: ${{ steps.review.outputs.engine }}
+          CRITICAL: ${{ steps.review.outputs.critical_count }}
+          WARNINGS: ${{ steps.review.outputs.warning_count }}
+          SUGGESTIONS: ${{ steps.review.outputs.suggestion_count }}
         run: |
-          echo "Review Status: ${{ steps.review.outputs.status }}"
-          echo "Critical Issues: ${{ steps.review.outputs.critical_count }}"
-          echo "Warnings: ${{ steps.review.outputs.warning_count }}"
-          echo "Suggestions: ${{ steps.review.outputs.suggestion_count }}"
+          echo "Status: $STATUS (outcome: $OUTCOME, engine: $ENGINE)"
+          echo "Critical: $CRITICAL, warnings: $WARNINGS, suggestions: $SUGGESTIONS"
 
       - name: Upload Review Results
-        if: always()
+        if: always() && steps.review.outputs.result_file != ''
         uses: actions/upload-artifact@v4
         with:
           name: llm-review-results
           path: ${{ steps.review.outputs.result_file }}
           retention-days: 7
-
-  # Optional: Run only on specific paths
-  code-review-filtered:
-    name: AI Code Review (Filtered)
-    runs-on: ubuntu-latest
-    if: false  # Enable by changing to: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-      pull-requests: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check for code changes
-        id: changes
-        run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '\.(py|js|ts|go|rs)$' || true)
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "No code files changed, skipping review"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "Changed files:"
-            echo "$CHANGED_FILES"
-          fi
-
-      - name: Run LLM Code Review
-        if: steps.changes.outputs.skip != 'true'
-        uses: radetsky/llm-code-review@v1
-        with:
-          api_key: ${{ secrets.LLM_API_KEY }}
