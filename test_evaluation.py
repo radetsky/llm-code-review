@@ -62,11 +62,23 @@ class TestGoldenCases:
         ).stdout.split()
         assert names
 
+    def test_build_repo_does_not_copy_cache_files(self, tmp_path):
+        case = load_cases(["safe-test-fixtures"])[0]
+        cache = case.root / "after" / "tests" / "__pycache__"
+        cache.mkdir(exist_ok=True)
+        (cache / "x.pyc").write_bytes(b"\xf3\x00")
+        try:
+            repo = build_repo(case, tmp_path / "repo")
+        finally:
+            (cache / "x.pyc").unlink()
+            cache.rmdir()
+        assert not list(repo.rglob("__pycache__")) and not list(repo.rglob("*.pyc"))
+
     def test_cases_do_not_give_the_answer_away(self):
         """The code must not tell the reviewer where the problem is."""
         for case in CASES:
             for path in (case.root / "after").rglob("*"):
-                if path.is_file():
+                if path.is_file() and "__pycache__" not in path.parts:
                     text = path.read_text(encoding="utf-8").lower()
                     hint = re.search(
                         r"\b(bug|vulnerab\w*|insecure|fixme|injection)\b", text

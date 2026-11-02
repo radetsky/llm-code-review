@@ -112,7 +112,12 @@ def _replace_tree(repo: Path, source: Path) -> None:
             shutil.rmtree(entry)
         else:
             entry.unlink()
-    shutil.copytree(source, repo, dirs_exist_ok=True)
+    shutil.copytree(
+        source,
+        repo,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
 
 
 def build_repo(case: Case, destination: Path) -> Path:
