@@ -1,0 +1,11 @@
+{
+  "description": "A large refactor splits one module into four modules and adds tests. One moved condition is the opposite of the original.",
+  "expected": [
+    {
+      "file": "service/pricing.py",
+      "pattern": "return 0\\.0 if value < FREE_SHIPPING_FROM else SHIPPING_COST",
+      "kind": "warning",
+      "note": "free shipping condition is inverted"
+    }
+  ]
+}

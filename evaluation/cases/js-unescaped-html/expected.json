@@ -1,0 +1,11 @@
+{
+  "description": "A new function writes comment text from the API into the page as HTML.",
+  "expected": [
+    {
+      "file": "web/comments.js",
+      "pattern": "el\\.innerHTML = ",
+      "kind": "critical",
+      "note": "cross-site scripting"
+    }
+  ]
+}

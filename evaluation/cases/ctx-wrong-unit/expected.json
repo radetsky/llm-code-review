@@ -1,0 +1,11 @@
+{
+  "description": "A new cache call passes a time in seconds. The cache class in another file takes milliseconds.",
+  "expected": [
+    {
+      "file": "app/rates.py",
+      "pattern": "_cache\\.set\\(currency, rate, RATE_CACHE_SECONDS\\)",
+      "kind": "warning",
+      "note": "seconds passed as milliseconds"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "description": "A table name goes into an f-string query, but a helper in another file checks it first. A correct review reports no critical issue and no warning.",
+  "expected": []
+}

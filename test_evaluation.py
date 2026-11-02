@@ -18,7 +18,7 @@ CASES = load_cases()
 
 class TestGoldenCases:
     def test_there_are_enough_cases(self):
-        assert 6 <= len(CASES) <= 12
+        assert 6 <= len(CASES) <= 30
         assert any(c.is_clean for c in CASES)
         assert any(not c.is_clean for c in CASES)
 
@@ -343,10 +343,9 @@ class TestRunEval:
         assert len(runner.calls) == len(CASES) * 2 * 2
         report = (tmp_path / "out" / "report.md").read_text()
         assert "| Metric | classic | agent |" in report
-        assert (
-            "Recall (problems found) | 12/12 = 100%" in report.replace("  ", " ")
-            or "100%" in report
-        )
+        total = 2 * sum(len(c.expected) for c in CASES)  # Two runs for each case.
+        row = f"| Recall (problems found) | {total}/{total} = 100% | {total}/{total} = 100% |"
+        assert row in report
         data = json.loads((tmp_path / "out" / "runs.json").read_text())
         assert set(data["runs"]) == {"classic", "agent"}
         assert data["meta"]["runs"] == 2
@@ -436,7 +435,8 @@ class TestRunEval:
         )
         a = aggregate(json.loads((tmp_path / "runs.json").read_text())["runs"]["agent"])
         assert a["false_positives"] == 1
-        assert a["clean_runs_with_false_positive"] == 0.5  # 1 of 2 clean cases
+        clean_cases = sum(1 for c in CASES if c.is_clean)
+        assert a["clean_runs_with_false_positive"] == 1 / clean_cases
 
     def test_list_does_not_run_anything(self, capsys):
         runner = FakeRunner(perfect_answer)

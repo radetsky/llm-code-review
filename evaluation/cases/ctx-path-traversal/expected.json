@@ -1,0 +1,11 @@
+{
+  "description": "A handler now stores a file under a name from the caller. The path helper in another file does not check the name.",
+  "expected": [
+    {
+      "file": "app/handlers.py",
+      "pattern": "build_path\\(UPLOAD_DIR, filename\\)",
+      "kind": "critical",
+      "note": "path traversal, build_path does not check the name"
+    }
+  ]
+}

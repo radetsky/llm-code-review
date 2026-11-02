@@ -1,0 +1,4 @@
+{
+  "description": "A test file has fake passwords and a dummy key. A correct review reports no critical issue and no warning.",
+  "expected": []
+}
