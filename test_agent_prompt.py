@@ -232,3 +232,109 @@ class TestReachTheModel:
         system = client.requests[0]["messages"][0]["content"]
         assert system.startswith("ONLY Rust checks:")
         assert system.endswith(" 6")
+
+
+def make_tools(tmp_path, monkeypatch, files: dict[str, int]):
+    """A repository where each file gets a staged change with the given number of new lines."""
+    root = tmp_path / "multi"
+    root.mkdir()
+    git = lambda *a: subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=T", *a],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    git("init", "-q", "-b", "main")
+    for name in files:
+        (root / name).write_text("x = 0\n")
+    git("add", ".")
+    git("commit", "-q", "-m", "base")
+    for name, count in files.items():
+        (root / name).write_text(
+            "x = 0\n" + "".join(f"v{i} = {i}\n" for i in range(count))
+        )
+    git("add", "-A")
+    monkeypatch.chdir(root)
+    from agent_tools import AgentTools
+    from diff_parser import DiffParser, RepoSource
+
+    config = ReviewConfig()
+    parser = DiffParser(config)
+    parsed = parser.parse_diff(parser.get_diff("staged"))
+    return AgentTools(config, RepoSource(str(root), "index"), parser, parsed)
+
+
+class TestTaskMessage:
+    def test_a_small_diff_is_in_the_message(self, tools):  # noqa: F811
+        from agent_prompt import build_task_message
+
+        text = build_task_message(tools.config, tools)
+        assert "app.py (modified)" in text  # The list of changed files
+        assert (
+            "The diffs of these files are below. Do not call get_diff for them." in text
+        )
+        assert "File: app.py (modified)" in text and "+ 2:     return 2" in text
+        assert "not shown" not in text
+        assert "Then call submit_review." in text
+        assert "\n\n\n" not in text and not re.search(r"\{\w+\}", text)
+
+    def test_get_diff_for_a_shown_file_is_not_repeated(self, tools):  # noqa: F811
+        from agent_prompt import build_task_message
+
+        build_task_message(tools.config, tools)
+        out = tools.call("get_diff", {"path": "app.py"})
+        assert out.startswith("You already got this result")
+
+    def test_the_switch_off_value_keeps_the_old_behavior(self, tools):  # noqa: F811
+        from agent_prompt import build_task_message
+
+        tools.config.config["agent"]["inline_diff_chars"] = 0
+        text = build_task_message(tools.config, tools)
+        assert "File: app.py" not in text and "+ 2:" not in text
+        assert (
+            "The diffs of these files are not shown. Read them with get_diff:\n- app.py"
+            in text
+        )
+        assert "below" not in text
+        assert tools.call("get_diff", {"path": "app.py"}).startswith("File: app.py")
+
+    def test_files_that_fit_are_shown_and_the_others_are_listed(
+        self, tmp_path, monkeypatch
+    ):
+        from agent_prompt import build_task_message
+
+        multi = make_tools(tmp_path, monkeypatch, {"a.py": 3, "big.py": 400, "c.py": 3})
+        multi.config.config["agent"] = dict(
+            multi.config.config["agent"], inline_diff_chars=1500
+        )
+        text = build_task_message(multi.config, multi)
+        assert (
+            "File: a.py" in text and "File: c.py" in text
+        )  # A small file after a big one still fits.
+        assert "File: big.py" not in text
+        assert "not shown. Read them with get_diff:\n- big.py" in text
+        assert multi.call("get_diff", {"path": "a.py"}).startswith("You already got")
+        assert multi.call("get_diff", {"path": "big.py"}).startswith("File: big.py")
+
+    def test_everything_shown_when_the_budget_is_large(self, tmp_path, monkeypatch):
+        from agent_prompt import build_task_message
+
+        multi = make_tools(tmp_path, monkeypatch, {"a.py": 5, "b.py": 5})
+        text = build_task_message(multi.config, multi)
+        assert "File: a.py" in text and "File: b.py" in text and "not shown" not in text
+
+    def test_the_budget_counts_all_shown_diffs(self, tmp_path, monkeypatch):
+        from agent_prompt import build_task_message
+
+        multi = make_tools(tmp_path, monkeypatch, {"a.py": 30, "b.py": 30})
+        one = len(multi.parser.format_for_llm([multi.parsed_files[0]]).strip())
+        multi.config.config["agent"] = dict(
+            multi.config.config["agent"], inline_diff_chars=one + 5
+        )
+        text = build_task_message(multi.config, multi)
+        assert text.count("File: ") == 1  # The second diff does not fit in the rest.
+
+    def test_the_first_request_has_the_diff(self, tools):  # noqa: F811
+        _, client = run(tools, [submit([])])
+        first = client.requests[0]["messages"][1]["content"]
+        assert "File: app.py (modified)" in first and "+ 2:     return 2" in first

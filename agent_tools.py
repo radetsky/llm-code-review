@@ -156,6 +156,13 @@ class AgentTools:
     def max_chars(self) -> int:
         return int(self.config.get("agent.max_tool_output_chars", 32000))
 
+    def mark_given(self, name: str, arguments: dict) -> None:
+        """Remember that the model already has the result of this call.
+
+        A later call with the same arguments gets a short note, not the result again.
+        """
+        self._seen_calls.add((name, json.dumps(arguments, sort_keys=True, default=str)))
+
     def changed_files_summary(self) -> str:
         """Return the changed files with line counts. This is not a tool call."""
         return self._list_changed_files({})

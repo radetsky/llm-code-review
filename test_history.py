@@ -376,3 +376,134 @@ class TestMain:
         commit(root, "more", notes_md=1)
         code, _ = self.run(root, tmp_path)
         assert code == 4 and "No change of a supported size" in capsys.readouterr().err
+
+
+class TestCompareWithAnEarlierRun:
+    def earlier(self, tmp_path):
+        records = [
+            record_of(SAMPLE, "agent", good(), 3000),
+            record_of(SAMPLE, "classic", good("classic", agent_stats=None), 3000),
+        ]
+        path = tmp_path / "old.json"
+        path.write_text(json.dumps({"meta": {}, "runs": records}))
+        return path, records
+
+    def test_load_run_gives_unique_samples_in_class_order(self, tmp_path):
+        small = Sample("small", "b^", "b", 1, 1, 10, "tiny")
+        records = [
+            record_of(SAMPLE, "agent", good(), 1),
+            record_of(small, "agent", good(), 1),
+            record_of(SAMPLE, "classic", good("classic", agent_stats=None), 1),
+        ]
+        path = tmp_path / "r.json"
+        path.write_text(json.dumps({"runs": records}))
+        samples, loaded = history.load_run(path)
+        assert [s.bucket for s in samples] == ["small", "large"]
+        assert len(loaded) == 3 and samples[1] == SAMPLE
+
+    def test_comparison_table(self):
+        old = [
+            record_of(
+                SAMPLE,
+                "agent",
+                good(
+                    agent_stats={
+                        "steps": 20,
+                        "tokens": 500000,
+                        "tool_calls": 9,
+                        "invalid_tool_calls": 0,
+                        "forced_submit": "max_steps",
+                    },
+                    duration_sec=50,
+                ),
+                1,
+            )
+        ]
+        new = [
+            record_of(
+                SAMPLE,
+                "agent",
+                good(
+                    agent_stats={
+                        "steps": 8,
+                        "tokens": 90000,
+                        "tool_calls": 5,
+                        "invalid_tool_calls": 0,
+                        "forced_submit": None,
+                    },
+                    duration_sec=20,
+                ),
+                1,
+            )
+        ]
+        text = history.render_comparison(old, new)
+        assert "| large | 50.0 / 20.0 | 20 / 8 | 500000 / 90000 | 1 / 0 |" in text
+        assert "Tokens in total: 500000 / 90000" in text
+        assert "Reviews that hit a budget: 1 / 0" in text
+
+    def test_the_run_uses_the_same_changes_and_adds_the_table(
+        self, repo, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(history, "classic_prompt_tokens", lambda *a: 1)
+        path, _ = self.earlier(tmp_path)
+        runner = FakeRunner()
+        code = history.main(
+            [
+                "--repo",
+                str(repo),
+                "--out",
+                str(tmp_path / "out"),
+                "--engines",
+                "agent",
+                "--from-run",
+                str(path),
+            ],
+            runner=runner,
+        )
+        assert code == 0
+        assert [(c[1], c[2]) for c in runner.calls] == [
+            ("aaa^", "aaa")
+        ]  # No new picking.
+        report = (tmp_path / "out" / "report.md").read_text()
+        assert "## Before and after (same changes)" in report
+
+    def test_no_table_for_an_engine_that_the_earlier_run_lacks(
+        self, repo, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(history, "classic_prompt_tokens", lambda *a: 1)
+        old = [record_of(SAMPLE, "classic", good("classic", agent_stats=None), 1)]
+        path = tmp_path / "old.json"
+        path.write_text(json.dumps({"runs": old}))
+        history.main(
+            [
+                "--repo",
+                str(repo),
+                "--out",
+                str(tmp_path / "out"),
+                "--engines",
+                "agent",
+                "--from-run",
+                str(path),
+            ],
+            runner=FakeRunner(),
+        )
+        assert "Before and after" not in (tmp_path / "out" / "report.md").read_text()
+
+    @pytest.mark.parametrize(
+        "content", ["not json", "{}", '{"runs": [{"bucket": "small"}]}']
+    )
+    def test_bad_earlier_run(self, repo, tmp_path, capsys, content):
+        path = tmp_path / "bad.json"
+        path.write_text(content)
+        code = history.main(
+            [
+                "--repo",
+                str(repo),
+                "--out",
+                str(tmp_path / "out"),
+                "--from-run",
+                str(path),
+            ],
+            runner=FakeRunner(),
+        )
+        assert code == 4 and "cannot read the earlier run" in capsys.readouterr().err

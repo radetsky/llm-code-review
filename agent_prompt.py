@@ -92,3 +92,41 @@ def build_system_prompt(config, parsed_files, source, step_target: int) -> str:
         step_target=step_target,
     )
     return re.sub(r"\n{3,}", "\n\n", text)  # No blank block if parts is empty.
+
+
+def build_task_message(config, tools) -> str:
+    """Return the first user message: the changed files and some of their diffs.
+
+    The message holds the diffs of as many files as fit in agent.inline_diff_chars.
+    The model reads the other diffs with get_diff. A diff in the message counts as
+    given, so a get_diff call for it gets a short note.
+    """
+    left = int(config.get("agent.inline_diff_chars", 24000))
+    shown, missing = [], []
+    for item in tools.parsed_files:
+        text = tools.parser.format_for_llm([item]).strip()
+        if len(text) <= left:
+            left -= len(text)
+            shown.append(text)
+            tools.mark_given("get_diff", {"path": item["path"]})
+        else:
+            missing.append(item["path"])
+
+    sections = []
+    if shown:
+        sections.append(
+            render(load_prompt("agent_diff_shown"), diffs="\n\n".join(shown)).rstrip()
+        )
+    if missing:
+        sections.append(
+            render(
+                load_prompt("agent_diff_missing"),
+                files="\n".join(f"- {p}" for p in missing),
+            ).rstrip()
+        )
+    text = render(
+        load_prompt("agent_task"),
+        changed_files=tools.changed_files_summary(),
+        diff_section="\n\n".join(sections),
+    )
+    return re.sub(r"\n{3,}", "\n\n", text)

@@ -125,6 +125,78 @@ def pick_samples(
     return [s for name, _, _ in BUCKETS for s in chosen[name]]
 
 
+def load_run(path: Path) -> tuple[list[Sample], list[dict]]:
+    """Read the samples and the records of an earlier run (its runs.json)."""
+    records = json.loads(Path(path).read_text(encoding="utf-8"))["runs"]
+    samples: list[Sample] = []
+    for r in records:
+        sample = Sample(
+            r["bucket"],
+            r["base"],
+            r["head"],
+            r["commits"],
+            r["files"],
+            r["lines"],
+            r["label"],
+        )
+        if sample not in samples:
+            samples.append(sample)
+    order = [name for name, _, _ in BUCKETS]
+    samples.sort(key=lambda s: order.index(s.bucket))
+    return samples, records
+
+
+def render_comparison(old: list[dict], new: list[dict], engine: str = "agent") -> str:
+    """Return a Markdown table that compares two runs of one engine for each size class."""
+    header = [
+        "Class",
+        "Time before / after (s)",
+        "Steps",
+        "Tokens",
+        "Budget hit",
+        "Critical+warn per run",
+    ]
+    lines = [
+        "## Before and after (same changes)",
+        "",
+        "Each cell shows the median before and after. Budget hit counts the reviews that ended at a budget.",
+        "",
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join("---" for _ in header) + "|",
+    ]
+    for bucket, _, _ in BUCKETS:
+        a = summarize(
+            [r for r in old if r["bucket"] == bucket and r["engine"] == engine]
+        )
+        b = summarize(
+            [r for r in new if r["bucket"] == bucket and r["engine"] == engine]
+        )
+        if not a["runs"] and not b["runs"]:
+            continue
+        lines.append(
+            f"| {bucket} | {_fmt(a['median_time'], 1)} / {_fmt(b['median_time'], 1)} | "
+            f"{_fmt(a['median_steps'])} / {_fmt(b['median_steps'])} | "
+            f"{_fmt(a['median_tokens'])} / {_fmt(b['median_tokens'])} | "
+            f"{a['forced']} / {b['forced']} | "
+            f"{_fmt(a['findings_per_run'], 1)} / {_fmt(b['findings_per_run'], 1)} |"
+        )
+    total_a = summarize([r for r in old if r["engine"] == engine])
+    total_b = summarize([r for r in new if r["engine"] == engine])
+    lines += [
+        "",
+        f"- Tokens in total: {total_a['total_tokens']} / {total_b['total_tokens']}",
+        f"- Median time: {_fmt(total_a['median_time'], 1)} s / {_fmt(total_b['median_time'], 1)} s",
+        f"- Reviews that hit a budget: {total_a['forced']} / {total_b['forced']}",
+        (
+            "- Findings (critical, warnings, suggestions): "
+            f"{total_a['critical']}, {total_a['warnings']}, {total_a['suggestions']} / "
+            f"{total_b['critical']}, {total_b['warnings']}, {total_b['suggestions']}"
+        ),
+        "",
+    ]
+    return "\n".join(lines)
+
+
 @contextmanager
 def working_directory(path: Path):
     old = os.getcwd()
@@ -373,6 +445,10 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
     parser.add_argument(
         "--list", action="store_true", help="List the chosen changes and exit"
     )
+    parser.add_argument(
+        "--from-run",
+        help="runs.json of an earlier run. Use the same changes and compare the result with that run",
+    )
     args = parser.parse_args(argv)
 
     engines = [e.strip() for e in args.engines.split(",") if e.strip()]
@@ -388,7 +464,17 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
         return 4
 
     config = ReviewConfig(str(base_config))
-    samples = pick_samples(repo, list_commits(repo, args.scan), args.per_bucket, config)
+    baseline: list[dict] = []
+    if args.from_run:
+        try:
+            samples, baseline = load_run(Path(args.from_run))
+        except (OSError, ValueError, KeyError) as error:
+            print(f"Error: cannot read the earlier run: {error}", file=sys.stderr)
+            return 4
+    else:
+        samples = pick_samples(
+            repo, list_commits(repo, args.scan), args.per_bucket, config
+        )
     if args.list:
         for s in samples:
             print(
@@ -438,6 +524,9 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
         "total_seconds": round(time.monotonic() - started),
     }
     report = render(records, meta)
+    for engine in engines:
+        if baseline and any(r["engine"] == engine for r in baseline):
+            report += "\n" + render_comparison(baseline, records, engine)
     (out_dir / "report.md").write_text(report, encoding="utf-8")
     (out_dir / "runs.json").write_text(
         json.dumps({"meta": meta, "runs": records}, indent=2), encoding="utf-8"

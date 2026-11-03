@@ -306,7 +306,9 @@ class TestLoop:
         assert "unknown tool" in tool_msgs[1]["content"]
         assert "1: def foo():" in tool_msgs[2]["content"]
         assert result.agent_stats["invalid_tool_calls"] == 2
-        assert result.agent_stats["tool_calls"] == 2
+        assert (
+            result.agent_stats["tool_calls"] == 1
+        )  # An invalid call is not counted twice.
 
     def test_calls_beyond_the_limit_are_not_run_and_model_is_told(self, tools):
         calls = [tool_call("list_changed_files", {}, f"c{i}") for i in range(6)]
@@ -479,9 +481,7 @@ class TestBudgets:
 
 class TestRepeatedCalls:
     def test_repeating_the_same_call_ends_the_review(self, tools):
-        same = lambda i: reply(
-            calls=[tool_call("get_diff", {"path": "app.py"}, f"c{i}")]
-        )
+        same = lambda i: reply(calls=[tool_call("git_log", {}, f"c{i}")])
         script = [same(i) for i in range(4)] + [submit([])]
         result, client = run(tools, script)
         # Step 1 is a real call. Steps 2 and 3 repeat it. Then the review must end.
@@ -494,14 +494,10 @@ class TestRepeatedCalls:
 
     def test_progress_resets_the_counter(self, tools):
         script = [
-            reply(calls=[tool_call("get_diff", {"path": "app.py"}, "a")]),
-            reply(
-                calls=[tool_call("get_diff", {"path": "app.py"}, "b")]
-            ),  # repeated call
+            reply(calls=[tool_call("git_log", {}, "a")]),
+            reply(calls=[tool_call("git_log", {}, "b")]),  # repeated call
             reply(calls=[tool_call("grep", {"pattern": "foo"}, "c")]),  # new call
-            reply(
-                calls=[tool_call("get_diff", {"path": "app.py"}, "d")]
-            ),  # repeated call
+            reply(calls=[tool_call("git_log", {}, "d")]),  # repeated call
             submit([]),
         ]
         result, _ = run(tools, script)
@@ -513,7 +509,7 @@ class TestRepeatedCalls:
             # Three repeated calls and one new call in each message.
             return reply(
                 calls=[
-                    tool_call("get_diff", {"path": "app.py"}, f"a{i}"),
+                    tool_call("git_log", {}, f"a{i}"),
                     tool_call("list_changed_files", {}, f"b{i}"),
                     tool_call("find_files", {"pattern": "*.py"}, f"c{i}"),
                     tool_call("grep", {"pattern": f"new{i}"}, f"d{i}"),
@@ -522,7 +518,7 @@ class TestRepeatedCalls:
 
         first = reply(
             calls=[
-                tool_call("get_diff", {"path": "app.py"}, "x1"),
+                tool_call("git_log", {}, "x1"),
                 tool_call("list_changed_files", {}, "x2"),
                 tool_call("find_files", {"pattern": "*.py"}, "x3"),
             ]
@@ -535,14 +531,14 @@ class TestRepeatedCalls:
 
     def test_mixed_batch_counts_as_progress(self, tools):
         script = [
-            reply(calls=[tool_call("get_diff", {"path": "app.py"}, "a")]),
+            reply(calls=[tool_call("git_log", {}, "a")]),
             reply(
                 calls=[
-                    tool_call("get_diff", {"path": "app.py"}, "b"),
+                    tool_call("git_log", {}, "b"),
                     tool_call("grep", {"pattern": "bar"}, "c"),
                 ]
             ),
-            reply(calls=[tool_call("get_diff", {"path": "app.py"}, "d")]),
+            reply(calls=[tool_call("git_log", {}, "d")]),
             submit([]),
         ]
         result, _ = run(tools, script)
@@ -694,7 +690,7 @@ class TestTrace:
             trace=True,
         )
         err = capsys.readouterr().err
-        assert "[TRACE] step 1/20 [1/1]: read_file" in err
+        assert "[TRACE] step 1/10 [1/1]: read_file" in err
         assert '"path": "app.py"' in err
         assert "submit_review accepted" in err
         assert "LLM REQUEST" not in err
@@ -738,3 +734,35 @@ class TestTrace:
             trace=True,
         )
         assert "forcing submit_review" in capsys.readouterr().err
+
+
+class TestStepCap:
+    def cap(self, tools, **agent):
+        tools.config.config["agent"].update(agent)
+        result, _ = run(tools, [submit([])])
+        return result.agent_stats["step_target"], result.agent_stats["step_cap"]
+
+    def test_cap_is_the_target_plus_a_margin(self, tools):
+        assert self.cap(tools) == (6, 10)  # One file: 4 + 2, and 4 more.
+
+    def test_margin_from_the_config(self, tools):
+        assert self.cap(tools, steps_over_target=1) == (6, 7)
+        assert self.cap(tools, steps_over_target=0) == (6, 6)
+
+    def test_cap_never_goes_above_max_steps(self, tools):
+        assert self.cap(tools, steps_over_target=100) == (6, 20)
+        assert self.cap(tools, max_steps=8) == (6, 8)
+
+    def test_more_files_give_a_higher_cap(self, tools):
+        tools.parsed_files = tools.parsed_files * 7
+        assert self.cap(tools) == (18, 20)
+
+    def test_a_model_that_does_not_stop_is_cut_at_the_cap(self, tools):
+        script = [
+            reply(calls=[tool_call("grep", {"pattern": f"p{i}"}, f"c{i}")])
+            for i in range(10)
+        ]
+        result, client = run(tools, script + [submit([])])
+        assert result.agent_stats["forced_submit"] == "max_steps"
+        assert result.agent_stats["steps"] == 10 and len(client.requests) == 11
+        assert "(max_steps)" in client.requests[-1]["messages"][-1]["content"]

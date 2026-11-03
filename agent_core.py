@@ -20,7 +20,7 @@ from typing import Any
 import json5
 from openai import OpenAI, OpenAIError
 
-from agent_prompt import build_system_prompt
+from agent_prompt import build_system_prompt, build_task_message
 from agent_tools import DUPLICATE_PREFIX, AgentTools
 from prompts import load_prompt, render
 from review_core import CodeSuggestion, ReviewResult
@@ -302,19 +302,19 @@ class AgentReviewer:
             max(max_steps - 2, 1),
             BASE_STEP_TARGET + STEPS_PER_FILE * len(tools.parsed_files),
         )
+        # The step cap is close to the step target. A change that needs more
+        # steps can still use max_steps, but only through a larger steps_over_target.
+        max_steps = min(
+            max_steps, step_target + int(cfg.get("agent.steps_over_target", 4))
+        )
         stats["step_target"] = step_target
+        stats["step_cap"] = max_steps
         system_prompt = build_system_prompt(
             cfg, tools.parsed_files, tools.source, step_target
         )
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": render(
-                    load_prompt("agent_task"),
-                    changed_files=tools.changed_files_summary(),
-                ),
-            },
+            {"role": "user", "content": build_task_message(cfg, tools)},
         ]
         nudges = 0
         stale_steps = 0
@@ -394,10 +394,11 @@ class AgentReviewer:
                         stats["invalid_tool_calls"] += 1
                         output = f"Error: {error}"
                     else:
-                        stats["tool_calls"] += 1
                         output = tools.call(name, args)
                         if output.startswith("Error: unknown tool"):
                             stats["invalid_tool_calls"] += 1
+                        else:
+                            stats["tool_calls"] += 1
 
                     shown = (
                         json.dumps(args, ensure_ascii=False)

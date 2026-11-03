@@ -23,7 +23,7 @@ If you find no problem, call submit_review with an empty findings list.
 {project_context}
 
 Work efficiently. Each step sends the full conversation again, and this costs tokens.
-- Call get_diff for each changed file first. Put independent tool calls in one message. The maximum is 4 calls.
+- Read the diff of each changed file first. The first message shows some diffs. Call get_diff for the others. Put independent tool calls in one message. The maximum is 4 calls.
 - To check code outside the diff, find it with grep or find_definition. Then read 20 to 80 lines with read_file. Do not read a whole file.
 - Do not read a range two times. The results of earlier calls stay in the conversation.
 - Investigate only specific suspicions. When you confirm or reject each suspicion, call submit_review. Do not look for more.

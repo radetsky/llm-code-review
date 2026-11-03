@@ -11,6 +11,8 @@ from prompts import load_prompt, render
 PROMPT_NAMES = [
     "agent_system",
     "agent_task",
+    "agent_diff_shown",
+    "agent_diff_missing",
     "agent_nudge",
     "agent_budget_exhausted",
     "agent_project_rules",
@@ -25,6 +27,8 @@ PROMPT_NAMES = [
 AGENT_PROMPTS = [
     "agent_system",
     "agent_task",
+    "agent_diff_shown",
+    "agent_diff_missing",
     "agent_nudge",
     "agent_budget_exhausted",
     "agent_project_rules",
@@ -111,6 +115,9 @@ class TestPlaceholders:
             "warning_rules",
             "suggestion_rules",
             "additional_instructions",
+            "diff_section",
+            "diffs",
+            "files",
         }
         for name in AGENT_PROMPTS:
             assert set(re.findall(r"\{(\w+)\}", load_prompt(name))) <= allowed
