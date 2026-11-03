@@ -19,6 +19,8 @@ const fs = require('fs');
 const MARKER = '<!-- llm-code-review -->';
 const TAG_PATTERN = /^[A-Za-z0-9_.-]{1,30}$/;
 const LEGACY_TITLE = 'LLM Code Review';
+// The heading of the comment of an older version: "## <icon> LLM Code Review".
+const LEGACY_HEADING = /^## \S+ LLM Code Review\b/m;
 const MAX_COMMENT_CHARS = 60000;
 const MAX_INLINE_COMMENTS = 50;
 const MAX_RANGE = 500;
@@ -110,7 +112,7 @@ function buildSummary(result, meta) {
       lines.push('### Code suggestions');
       for (const s of codeSuggestions) {
         const where = s.line_start === s.line_end ? s.line_start : `${s.line_start}-${s.line_end}`;
-        lines.push(`- 🔧 \`${s.file}:${where}\`: ${neutralize(s.description)}`);
+        lines.push(`- 🔧 \`${String(s.file).replace(/`/g, '')}:${where}\`: ${neutralize(s.description)}`);
       }
       lines.push('');
     }
@@ -149,6 +151,15 @@ function patchRightLines(patch) {
   return lines;
 }
 
+// The fence must be longer than any run of backticks in the code. Otherwise
+// the code closes the block and the rest of the text renders as markdown.
+function suggestionBlock(code) {
+  const text = String(code);
+  const longest = Math.max(0, ...(text.match(/`+/g) || []).map((run) => run.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}suggestion\n${text}\n${fence}`;
+}
+
 function collectComments(result) {
   const comments = [];
   for (const { key, icon } of SEVERITIES) {
@@ -165,7 +176,7 @@ function collectComments(result) {
       path: String(s.file).replace(/^\.\//, ''),
       start: s.line_start,
       end: s.line_end,
-      body: `💡 ${neutralize(s.description)}\n\n\`\`\`suggestion\n${s.suggested_code}\n\`\`\``,
+      body: `💡 ${neutralize(s.description)}\n\n${suggestionBlock(s.suggested_code)}`,
       isSuggestion: true,
     });
   }
@@ -235,7 +246,7 @@ async function postSummary({ github, context, core, env }) {
         c.user &&
         c.user.type === 'Bot' &&
         c.body &&
-        (c.body.includes(marker) || (!tagged && c.body.includes(LEGACY_TITLE) && !/<!-- llm-code-review:/.test(c.body)))
+        (c.body.includes(marker) || (!tagged && LEGACY_HEADING.test(c.body) && !/<!-- llm-code-review:/.test(c.body)))
     );
     if (existing) {
       await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });

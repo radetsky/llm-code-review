@@ -5,6 +5,8 @@ The release 0.1.0 waits for the decision about the default engine.
 ## [Unreleased]
 
 ### Fixed
+- A chunked classic review uses the backup model and the static analysis when the model is down, and it returns `model_unavailable`, not `error`.
+- The pull request comment script uses a fence that is longer than the backticks in a suggested change. It no longer takes a comment of another bot, and it removes backticks from a file name in the summary.
 - The action ignores `llm.base_url` of the config file in GitHub Actions. A pull request can change that file and send the API key to another server. Set the input `base_url`.
 - `get_diff` refuses the files of the deny list. Git commands of the agent tools stop after 60 seconds.
 - Secrets in `agent_stats.hybrid.fallback_reason` are hidden.

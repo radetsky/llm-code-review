@@ -237,6 +237,28 @@ test('postSummary finds the comment of an older version', async () => {
   assert.equal(github.calls.update[0].comment_id, 5);
 });
 
+test('postSummary does not take the comment of another bot', async () => {
+  const github = makeGithub({ comments: [{ id: 8, user: { type: 'Bot' }, body: 'Thanks. LLM Code Review is a nice tool.' }] });
+  await lib.postSummary({ github, context, core: makeCore(), env: env(RESULT) });
+  assert.equal(github.calls.update.length, 0);
+  assert.equal(github.calls.create.length, 1);
+});
+
+test('a suggestion with backticks gets a longer fence', () => {
+  const [c] = lib.collectComments({
+    code_suggestions: [{ file: 'a.md', line_start: 1, line_end: 1, description: 'd', suggested_code: 'x\n```js\ny\n```' }],
+  });
+  assert.ok(c.body.includes('````suggestion\nx\n```js\ny\n```\n````'));
+});
+
+test('the summary does not let a file name break the code span', () => {
+  const text = lib.buildSummary(
+    { code_suggestions: [{ file: 'a`b.py', line_start: 1, line_end: 1, description: 'd', suggested_code: 'x' }] },
+    { status: 'success', outcome: 'success', engine: 'classic' }
+  );
+  assert.ok(text.includes('`ab.py:1`'));
+});
+
 test('postSummary shows the error text when the result file is missing', async () => {
   const github = makeGithub();
   await lib.postSummary({

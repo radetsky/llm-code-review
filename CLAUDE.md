@@ -33,6 +33,7 @@ python review.py --mode all                 # Review all changes from HEAD
 python review.py --base main --head feature # Review between branches
 python review.py --format json              # JSON output for CI/CD
 python review.py --engine agent             # Agentic review (tools); default is classic
+python review.py --engine hybrid            # Classic proposes, the agent verifies
 python review.py --fail-on critical         # Exit 1 on critical issues (default: none, advisory)
 python review.py --fail-on warnings         # Exit 1 on warnings too (alias: --strict)
 python review.py --trace                    # Print agent steps / tool calls to stderr
@@ -82,6 +83,7 @@ agent_core.py       Agent loop (engine "agent"): budgets, forced submit_review,
     |               Qwen quirks, finding validation, tracing
     v
 agent_tools.py      Read-only tools (read_file, grep, git_blame, ...)
+    |               hybrid_core.py: classic candidates, agent check (engine "hybrid")
     |
     v
 diff_parser.py      RepoSource: safe file access for index / worktree / git rev
@@ -90,7 +92,7 @@ diff_parser.py      RepoSource: safe file access for index / worktree / git rev
 Prompts: every text that tells the model what to do is a file in `prompts/`
 (`agent_system.md`, `agent_task.md`, `agent_nudge.md`, `agent_budget_exhausted.md`,
 `agent_project_rules.md`, `agent_lang_{django,go,rust}.md`, `rule_docstrings.md`,
-`classic_review.md`, `classic_code_suggestions.md`). `prompts.py` loads them.
+`classic_review.md`, `classic_code_suggestions.md`, `hybrid_system.md`, `hybrid_task.md`). `prompts.py` loads them.
 `agent_prompt.py` builds the agent system prompt: it adds the language checks
 (config `prompt.language_blocks`: `"auto"`, a list, or `[]`) and the project rules
 (`prompt.custom_*`, `prompt.additional_instructions`, `review.check_docstrings`).
@@ -148,7 +150,7 @@ Git hooks (`hooks/pre-commit`, `hooks/pre-push`) never block: they always exit 0
 - `LLM_MODEL` - Override model name (optional)
 - `LLM_TIMEOUT` - Request timeout in seconds (default: 180)
 - `LLM_MAX_TOKENS_PER_REQUEST` - Max tokens per review chunk (default: 4096)
-- `LLM_ENGINE` - `agent` or `classic` (CLI `--engine` wins; then `agent.enabled` in config)
+- `LLM_ENGINE` - `agent`, `classic` or `hybrid` (CLI `--engine` wins; then `agent.enabled` in config)
 - `LLM_AGENT_THINKING` - `default`, `on` or `off`: the thinking mode of the model for the agent (CLI `--thinking` wins; then `agent.thinking`)
 - `LLM_MONITORING` - `1` writes one line to the review log for each review (config `monitoring.enabled`)
 - `LLM_TOKEN_LIMIT_STRATEGY` - Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`)

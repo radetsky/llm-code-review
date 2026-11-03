@@ -283,6 +283,7 @@ class LLMReviewer:
         all_code_suggestions = []
         chunks_reviewed = 0
         raw_responses = []
+        last_api_error: OpenAIError | None = None
 
         for i, chunk in enumerate(chunks):
             self.logger.info(f"Reviewing chunk {i + 1}/{total_chunks}")
@@ -299,10 +300,16 @@ class LLMReviewer:
                         f"--- Chunk {i + 1} ---\n{result.raw_response}"
                     )
             except Exception as e:
+                if isinstance(e, OpenAIError):
+                    last_api_error = e
                 self.logger.warning(f"Failed to review chunk {i + 1}: {e}")
                 all_warnings.append(
                     f"Chunk {i + 1}/{total_chunks} review failed: {str(e)}"
                 )
+
+        if chunks_reviewed == 0 and last_api_error is not None:
+            # The model is down. Use the backup model and static analysis.
+            return self._handle_model_unavailable(diff_content, last_api_error)
 
         unique_critical = list(dict.fromkeys(all_critical))
         unique_warnings = list(dict.fromkeys(all_warnings))

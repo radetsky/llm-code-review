@@ -224,6 +224,33 @@ class TestAgentEngine:
         assert data["warnings"] == ["app.py:2: meh"]
         assert data["agent_stats"]["steps"] == 3
 
+    def test_hybrid_engine_is_selected_and_labelled(self, repo, monkeypatch, capsys):
+        seen = {}
+
+        def fake_review(self, diff, tools):
+            seen["tools"] = tools
+            return result(warnings=["app.py:2: kept"], stats={"hybrid": {"kept": 1}})
+
+        monkeypatch.setattr("hybrid_core.HybridReviewer.review", fake_review)
+        monkeypatch.setattr(
+            ReviewCLI,
+            "_run_agent_review",
+            lambda *a, **k: pytest.fail("agent must not run"),
+        )
+        code, data, _, _ = run_json(capsys, "--engine", "hybrid", "--mode", "staged")
+        assert code == 0 and data["engine"] == "hybrid"
+        assert data["warnings"] == ["app.py:2: kept"]
+        assert seen["tools"].parsed_files
+
+    def test_hybrid_fallback_label(self, repo, monkeypatch, capsys):
+        def fake_review(self, diff, tools):
+            self.outcome = "hybrid->classic"
+            return result()
+
+        monkeypatch.setattr("hybrid_core.HybridReviewer.review", fake_review)
+        _, data, _, _ = run_json(capsys, "--engine", "hybrid", "--mode", "staged")
+        assert data["engine"] == "hybrid->classic"
+
     def test_env_selects_agent(self, repo, fake_agent, monkeypatch, capsys):
         monkeypatch.setenv("LLM_ENGINE", "agent")
         _, data, _, _ = run_json(capsys, "--mode", "staged")
@@ -634,6 +661,14 @@ class TestThinkingFlag:
             next((Path(repo) / "logs").glob("*.jsonl")).read_text().splitlines()[0]
         )
         assert entry["agent"]["thinking"] == "on" and entry["agent"]["step_cap"] == 20
+
+
+class TestGetEngineHybrid:
+    def test_hybrid_is_valid(self, monkeypatch):
+        monkeypatch.delenv("LLM_ENGINE", raising=False)
+        assert ReviewConfig().get_engine("hybrid") == "hybrid"
+        monkeypatch.setenv("LLM_ENGINE", "HYBRID")
+        assert ReviewConfig().get_engine() == "hybrid"
 
 
 class TestActionsBaseUrl:

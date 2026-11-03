@@ -250,6 +250,10 @@ class TestSettingsStep:
             out["context"],
         ) == ("classic", "", "", "", "")
 
+    def test_hybrid_engine_is_accepted(self, tmp_path):
+        out = self.run(tmp_path, INPUT_ENGINE="hybrid")
+        assert out["engine"] == "hybrid"
+
     @pytest.mark.parametrize(
         "engine", ["turbo", "AGENT", "agent; rm -rf /", "$(id)", ""]
     )
