@@ -129,6 +129,7 @@ class TestManifest:
         inputs = ACTION["inputs"]
         assert inputs["engine"]["default"] == "classic"
         assert "max_steps" in inputs and "wall_timeout" in inputs
+        assert "thinking" in inputs and not inputs["thinking"].get("default")
         assert inputs["api_key"]["required"] is False  # An empty key skips the review.
 
     def test_outputs_point_to_existing_steps(self):
@@ -203,6 +204,7 @@ SETTINGS_ENV = {
     "API_KEY": "key",
     "INPUT_ENGINE": "classic",
     "INPUT_MODE": "",
+    "INPUT_THINKING": "",
     "INPUT_MAX_STEPS": "",
     "INPUT_WALL_TIMEOUT": "",
     "INPUT_CONTEXT": "",
@@ -265,6 +267,23 @@ class TestSettingsStep:
         )
         assert (out["max_steps"], out["wall_timeout"], out["context"]) == ("", "", "")
         assert out["_exit"] == 0
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("on", "on"),
+            ("off", "off"),
+            ("default", "default"),
+            ("", ""),
+            ("ON", ""),
+            ("yes", ""),
+            ("on; id", ""),
+            ("$(id)", ""),
+        ],
+    )
+    def test_thinking(self, tmp_path, value, expected):
+        out = self.run(tmp_path, INPUT_THINKING=value)
+        assert out["thinking"] == expected and out["_exit"] == 0
 
     @pytest.mark.parametrize(
         "mode,expected",
@@ -366,6 +385,7 @@ REVIEW_ENV = {
     "LLM_API_KEY": "k",
     "ENGINE": "agent",
     "MODE": "",
+    "THINKING": "",
     "MAX_STEPS": "",
     "WALL_TIMEOUT": "",
     "CONTEXT": "",
@@ -420,6 +440,11 @@ class TestReviewStep:
         assert argv[argv.index("--max-steps") + 1] == "9"
         assert argv[argv.index("--wall-timeout") + 1] == "60"
         assert argv[argv.index("--context") + 1] == "4"
+
+    def test_thinking_is_passed_only_when_it_is_set(self, tmp_path, fake_action):
+        argv = self.run(tmp_path, fake_action, THINKING="on")["_result"]["argv"]
+        assert argv[argv.index("--thinking") + 1] == "on"
+        assert "--thinking" not in self.run(tmp_path, fake_action)["_result"]["argv"]
 
     def test_mode_replaces_the_range(self, tmp_path, fake_action):
         argv = self.run(tmp_path, fake_action, MODE="staged")["_result"]["argv"]
