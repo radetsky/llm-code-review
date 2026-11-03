@@ -44,17 +44,22 @@ python review.py --test-connection          # Test LLM API connectivity
 # Install git hooks
 python install_hooks.py
 
-# Code formatting and linting
+# Code formatting and linting (CI uses ruff 0.17.3)
 ruff format .                               # Format all Python files
 ruff check .                                # Lint all Python files
 ruff check --fix .                          # Auto-fix linting issues
 
+# Tests (CI runs them on Python 3.11 and 3.13)
+python -m pytest -q                         # Python tests
+node --test scripts/post_review.test.js     # JavaScript tests (pytest runs them too)
+
 # Evaluation on golden cases (calls the LLM)
 python -m evaluation.run_eval --list                        # List the cases
-python -m evaluation.run_eval --runs 3                      # Both engines, 3 runs for each case
+python -m evaluation.run_eval --runs 3                      # Engines classic and agent, 3 runs for each case
+python -m evaluation.run_eval --engines hybrid --runs 3     # One engine (classic, agent or hybrid)
 python -m evaluation.run_eval --engines agent --cases sql-injection   # One engine, one case
 python -m evaluation.history --list                         # Real changes from git history, by size
-python -m evaluation.history --per-bucket 3                 # Cost of both engines on those changes
+python -m evaluation.history --per-bucket 3                 # Cost of the engines on those changes
 
 # Monitoring
 python monitor.py health                    # System health check
@@ -83,10 +88,12 @@ agent_core.py       Agent loop (engine "agent"): budgets, forced submit_review,
     |               Qwen quirks, finding validation, tracing
     v
 agent_tools.py      Read-only tools (read_file, grep, git_blame, ...)
-    |               hybrid_core.py: classic candidates, agent check (engine "hybrid")
     |
     v
 diff_parser.py      RepoSource: safe file access for index / worktree / git rev
+
+hybrid_core.py      Engine "hybrid": the classic engine lists candidates, then
+                    AgentReviewer checks each one (own prompts hybrid_*.md)
 ```
 
 Prompts: every text that tells the model what to do is a file in `prompts/`
@@ -100,12 +107,17 @@ Edit a file to change the prompt. Keep the placeholders, for example `{step_targ
 Agent prompts follow ASD-STE100. The tool descriptions and the notes in tool
 results are still in `agent_tools.py` and `agent_core.py`.
 
+`config.py` defines `ENGINES`. Use it where you need the list of engines.
+`review_core.normalize_text` is the one rule for duplicate text.
+
 `redaction.py` hides secrets in the text of a review. `review.py` calls `redact_result` for every
 engine before it prints, logs or posts the result. Do not output review text before that call.
 
 Engines: `classic` (single prompt, default), `agent` (tool-calling loop) and `hybrid`
-(`hybrid_core.py`: classic proposes candidates, the agent verifies them).
-Degradation: agent -> classic (same model) -> static analysis.
+(`hybrid_core.py`: classic proposes candidates, the agent verifies them). The hybrid engine keeps the
+notices of the classic engine and reports candidates over `hybrid.max_candidates` as not verified.
+Degradation: agent -> classic (same model) -> static analysis; hybrid -> classic result (`hybrid->classic`).
+A chunked classic review with all chunks failed also uses the backup model and static analysis.
 
 ## GitHub Action
 
@@ -116,6 +128,8 @@ event `COMMENT` only: one summary comment (`scripts/post_review.js`, function
 `postSummary`) and one review with inline comments (`postInlineReview`) on lines
 that the diff shows. Rules for changes to `action.yml`:
 
+- The action ignores `llm.base_url` of the config file when `GITHUB_ACTIONS=true`, because a pull request
+  can change that file. The input `base_url` sets `LLM_BASE_URL`.
 - Never write `${{ ... }}` in a `run:` or `script:` block. Pass every value
   through `env:`. `test_action.py` checks this.
 - The action runs `scripts/read_result.py` to read the result of `review.py`.
@@ -160,6 +174,7 @@ Git hooks (`hooks/pre-commit`, `hooks/pre-push`) never block: they always exit 0
 - `agent.*` - budgets and limits of the agent engine (`max_steps`, `max_total_tokens`,
   `wall_timeout_sec`, `max_tool_output_chars`, `read_default_lines`, `max_read_scan_bytes`, ...)
 - `prompt.*` - project rules, `additional_instructions` and `language_blocks`
+- `hybrid.*` - `max_candidates`, `base_steps`, `steps_per_candidate`, `when_no_candidates` (`accept` or `agent`)
 - `monitoring.*` - `enabled` and `log_dir` of the review log (`monitor.py` reads it)
 
 ### Current Setup
@@ -171,4 +186,5 @@ Git hooks (`hooks/pre-commit`, `hooks/pre-push`) never block: they always exit 0
 - **All code, comments, docstrings and documentation must be in English, written in ASD-STE100 Simplified Technical English** (short sentences, active voice, simple present tense, one term for one meaning, no idioms). Apply this to all new and changed text.
 - Always communicate with the user in Ukrainian
 - Uses fish shell for environment configuration
-- Code formatted with `ruff format` and linted with `ruff check`
+- Code formatted with `ruff format` and linted with `ruff check` (CI pins ruff 0.17.3; `.github/workflows/ci.yml`)
+- The agent tools refuse the files of the deny list (`DENY_PATTERNS`), also in `get_diff`. Git commands of the tools stop after 60 s.

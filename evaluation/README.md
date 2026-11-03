@@ -7,6 +7,10 @@ This folder measures how well the review engines find problems.
     python -m evaluation.run_eval --list
     python -m evaluation.run_eval --runs 5
     python -m evaluation.run_eval --engines agent --cases ctx-wrong-unit --runs 3
+    python -m evaluation.run_eval --engines classic,hybrid,agent --runs 3
+
+The engines are `classic`, `hybrid` and `agent`. A prompt variant runs through `--config` with
+`prompt.custom_prompt`, so you can compare two prompts with the same cases.
 
 The script needs `LLM_API_KEY` and `LLM_BASE_URL` in the environment. It
 saves `report.md` and `runs.json` in `evaluation/results/<time>`. Git
@@ -19,7 +23,7 @@ The golden cases are small. To see the cost on real changes, run
     python -m evaluation.history --per-bucket 3
 
 The tool picks changes from the git history of the repository in four size classes (small, medium,
-large and huge, by the number of changed lines in files that the review reads). It runs both
+large and huge, by the number of changed lines in files that the review reads). It runs the
 engines on them and writes a report with the time, the tokens, the steps, the reviews that hit a
 budget, the fallbacks and the number of findings. It has no answer key, so read the findings in
 `runs.json` to judge them. The tool sends the code of the repository to the LLM that you configure.

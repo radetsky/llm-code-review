@@ -34,7 +34,7 @@ jobs:
           # base_url: ${{ secrets.LLM_BASE_URL }}
           # model: ${{ secrets.LLM_MODEL }}
 
-          # Optional: use the agent engine (default: classic)
+          # Optional: use the agent or hybrid engine (default: classic)
           # engine: agent
 
           # Optional: disable PR comments

@@ -505,7 +505,8 @@ Pass values to `run:` scripts through `env:`, as in this example. Do not write `
 | `agent` | The model reads files, searches the code and checks the history with tools, then submits findings | Changes whose problems depend on code outside the diff; fewer false alarms |
 
 On a set of golden cases (`evaluation/`) the agent found more problems and made far fewer false
-alarms, but it takes more time and tokens. If the agent fails, the action falls back to the classic
+alarms, but it takes more time and tokens. The hybrid engine is between them: on small and medium
+changes it takes seconds and a few thousand tokens, and it removes most false alarms of the classic engine. If the agent fails, the action falls back to the classic
 engine and then to static analysis. To run both engines on one pull request, use two jobs with different
 `comment_tag` values (see `.github/workflows/llm_code_review.yml`).
 

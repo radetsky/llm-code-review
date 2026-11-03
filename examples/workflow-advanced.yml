@@ -45,7 +45,8 @@ jobs:
           base_url: ${{ secrets.LLM_BASE_URL }}
           model: ${{ secrets.LLM_MODEL }}
 
-          # Review engine: classic (one prompt, default) or agent (tool-calling loop).
+          # Review engine: classic (one prompt, default), hybrid (classic proposes, agent verifies)
+          # or agent (tool-calling loop).
           engine: agent
 
           # Agent engine only. Leave them empty to use the values of the config.
