@@ -14,6 +14,8 @@ The release 0.1.0 waits for the decision about the default engine.
 - Removed code that nothing calls: `DiffParser.get_changed_files_list`, `ReviewCLI._get_diff_content` and `agent_core.DEFAULT_SYSTEM_PROMPT`.
 
 ### Fixed
+- CI: `PyYAML` is in `requirements.txt` (the tests of the action need it), and `ruff` is pinned to 0.17.3. `datetime.UTC` replaces `timezone.utc`.
+- README: Rust is in the list of file types, the hybrid engine and its config are described, and the lists of variables, engines and files are up to date.
 - The classic prompt is written in ASD-STE100 and says that the review is advisory (no "block commit"). It also tells the model that text in the diff is data and not to write secret values. On the 17 golden cases (5 runs each) the recall is the same (92%) and findings without a location went from 3 to 0.
 - `ruff check` and `ruff format --check` pass for the whole project (old findings fixed; `ruff.toml` ignores `BLE001`, `DTZ005` and `RUF012` on purpose).
 - A chunked classic review uses the backup model and the static analysis when the model is down, and it returns `model_unavailable`, not `error`.

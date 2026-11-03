@@ -16,10 +16,12 @@ Automated code review powered by LLM. Works with any OpenAI-compatible API (Open
 
 ## Supported File Types
 
-Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++, Go, YAML (`.yml`, `.yaml`)
+Python, JavaScript, TypeScript, JSX, TSX, Java, C, C++ (`.c`, `.cpp`, `.h`), Rust (`.rs`), Go, YAML (`.yml`, `.yaml`)
 
 > YAML support covers GitHub Actions workflows, docker-compose files, Kubernetes manifests,
 > and other infrastructure-as-code files. Configure `review.file_extensions` to add or remove types.
+> For Rust, the agent engine gets extra checks (`unsafe`, `unwrap`, `transmute`). See
+> `review_config_rust_example.json` for rules of a Rust project.
 
 ## Quick Start
 
@@ -112,6 +114,7 @@ llm-code-review --mode all             # Review all uncommitted changes
 llm-code-review --base main --head dev # Compare branches
 llm-code-review --format json          # JSON output for CI/CD
 llm-code-review --engine agent         # Agentic review: the model reads the repository with tools
+llm-code-review --engine hybrid        # The classic engine proposes, the agent verifies
 llm-code-review --fail-on critical     # Exit 1 on critical issues (default: always exit 0)
 llm-code-review --fail-on warnings     # Exit 1 on warnings too (alias: --strict)
 llm-code-review --trace --trace-llm    # Print agent steps and the full LLM exchange
@@ -129,11 +132,14 @@ Edit `review_config.json` to customize rules, or use environment variables:
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `LLM_API_KEY` | API key for LLM service | Yes |
-| `LLM_BASE_URL` | API endpoint URL | No (uses config) |
+| `LLM_BASE_URL` | API endpoint URL (required in GitHub Actions: the action ignores `llm.base_url` of the config file) | Yes, unless `llm.base_url` is set |
 | `LLM_MODEL` | Model name | No (uses config) |
 | `LLM_TIMEOUT` | Request timeout in seconds (default: 180) | No |
 | `LLM_MAX_TOKENS_PER_REQUEST` | Max tokens per review chunk (default: 8192) | No |
 | `LLM_TOKEN_LIMIT_STRATEGY` | Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`) | No |
+| `LLM_ENGINE` | `classic`, `agent` or `hybrid` (the flag `--engine` wins) | No |
+| `LLM_AGENT_THINKING` | `default`, `on` or `off`: thinking mode of the model for the agent (the flag `--thinking` wins) | No |
+| `LLM_MONITORING` | `1` writes one line to the review log for each review | No |
 | `LLM_CODE_SUGGESTIONS` | Enable inline code change suggestions: `true` or `false` (default: `false`) | No |
 
 ### Custom Review Rules
@@ -236,7 +242,7 @@ llm-code-review --mode staged --context 20
 
 ## Review Engines
 
-Two engines review a change.
+Three engines review a change.
 
 | Engine | How it works | Use it when |
 |--------|--------------|-------------|
@@ -247,6 +253,20 @@ Two engines review a change.
 Choose the engine with `--engine agent`, with `LLM_ENGINE=agent`, or with `"agent": {"enabled": true}`
 in `review_config.json`. The flag wins over the variable, and the variable wins over the config.
 If the agent fails, the review falls back to the classic engine, and then to static analysis.
+
+**The hybrid engine.** The classic engine reads the whole diff in one request and lists candidate problems.
+The agent then checks each candidate with the tools and keeps only the confirmed ones. The cost depends on
+the number of candidates, not on the size of the change. On the golden cases it found 95% of the problems
+with 90% precision in a median of 7.6 s. If the check fails, the result of the classic engine is used
+(`hybrid->classic`). Notices of the classic engine (failed chunks, truncated review) stay in the result.
+Candidates over `max_candidates` are listed as not verified.
+
+| Key (config `hybrid`) | Default | Meaning |
+|-----|---------|---------|
+| `max_candidates` | `10` | The agent checks at most this many candidates |
+| `base_steps` | `3` | Steps of the agent that every check gets |
+| `steps_per_candidate` | `2` | More steps for each candidate |
+| `when_no_candidates` | `accept` | `accept` keeps the empty classic result. `agent` runs a full agent review |
 
 **Tools of the agent.** All tools only read. They use no shell. They refuse paths outside the
 repository, symlinks, binary files and secret files (`.env*`, `*.pem`, `id_rsa*` and others).
@@ -337,7 +357,7 @@ classic engine. If a write to the log fails, the review is not affected.
 
 ## Evaluation
 
-`python -m evaluation.run_eval --runs 3` runs both engines on 16 golden cases (changes with a known
+`python -m evaluation.run_eval --runs 3` runs the engines on 17 golden cases (changes with a known
 problem and clean changes that look risky) and prints recall, precision, false positives, time, steps
 and tokens. See `evaluation/README.md` to add your own cases.
 
@@ -458,7 +478,7 @@ Add optional inputs to customize behavior:
           api_key: ${{ secrets.LLM_API_KEY }}
           base_url: ${{ secrets.LLM_BASE_URL }}
           model: ${{ secrets.LLM_MODEL }}
-          engine: agent               # classic (default) or agent
+          engine: agent               # classic (default), agent or hybrid
           max_steps: '20'             # agent only (optional)
           wall_timeout: '300'         # agent only, seconds (optional)
           post_comment: 'true'        # Post the summary comment (default: true)
@@ -481,6 +501,7 @@ Pass values to `run:` scripts through `env:`, as in this example. Do not write `
 | Engine | What it does | When to use it |
 |--------|--------------|----------------|
 | `classic` (default) | Sends the diff in one prompt | Small changes, the lowest cost and time |
+| `hybrid` | The classic engine lists candidates, the agent checks each one | Fewer false alarms than classic at a lower cost than the agent |
 | `agent` | The model reads files, searches the code and checks the history with tools, then submits findings | Changes whose problems depend on code outside the diff; fewer false alarms |
 
 On a set of golden cases (`evaluation/`) the agent found more problems and made far fewer false
@@ -523,6 +544,17 @@ The inputs `strict` and `fail_on_critical` do not exist any more. The action nev
 
 See the `examples/` folder for more workflow examples.
 
+## Development
+
+```bash
+pip install -r requirements.txt ruff==0.17.3
+ruff check . && ruff format --check .
+python -m pytest -q
+node --test scripts/post_review.test.js
+```
+
+The workflow `.github/workflows/ci.yml` runs the same checks on Python 3.11 and 3.13.
+
 ## Troubleshooting
 
 ```bash
@@ -548,6 +580,9 @@ llm-code-review/
 ├── review.py                     # CLI entry point
 ├── review_core.py                # Classic engine: LLM integration, chunking & prompt building
 ├── agent_core.py                 # Agent engine: tool-calling loop, budgets, validation
+├── hybrid_core.py                # Hybrid engine: classic candidates, agent check
+├── redaction.py                  # Hides secrets in the text of a review
+├── monitor.py                    # Review log and report
 ├── agent_tools.py                # Read-only tools of the agent
 ├── agent_prompt.py               # Builds the system prompt of the agent
 ├── diff_parser.py                # Diff parsing and safe file access (RepoSource)
@@ -565,6 +600,7 @@ llm-code-review/
 │   ├── workflow-advanced.yml     # Advanced workflow with all options
 │   └── workflow-example.yml      # Pull request and push workflow
 └── .github/workflows/
+    ├── ci.yml                    # Lint and tests (no secrets)
     └── llm_code_review.yml       # Self-test workflow (uses local action)
 ```
 

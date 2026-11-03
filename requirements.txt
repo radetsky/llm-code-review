@@ -7,3 +7,4 @@ rich==13.7.1
 argparse==1.4.0
 json5==0.9.14
 pytest>=7.0
+PyYAML==6.0.2
