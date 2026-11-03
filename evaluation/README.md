@@ -12,6 +12,18 @@ The script needs `LLM_API_KEY` and `LLM_BASE_URL` in the environment. It
 saves `report.md` and `runs.json` in `evaluation/results/<time>`. Git
 ignores that folder.
 
+## Cost on real changes
+
+The golden cases are small. To see the cost on real changes, run
+
+    python -m evaluation.history --per-bucket 3
+
+The tool picks changes from the git history of the repository in four size classes (small, medium,
+large and huge, by the number of changed lines in files that the review reads). It runs both
+engines on them and writes a report with the time, the tokens, the steps, the reviews that hit a
+budget, the fallbacks and the number of findings. It has no answer key, so read the findings in
+`runs.json` to judge them. The tool sends the code of the repository to the LLM that you configure.
+
 ## Cases
 
 A case is a folder in `evaluation/cases`.

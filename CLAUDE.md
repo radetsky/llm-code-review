@@ -52,6 +52,8 @@ ruff check --fix .                          # Auto-fix linting issues
 python -m evaluation.run_eval --list                        # List the cases
 python -m evaluation.run_eval --runs 3                      # Both engines, 3 runs for each case
 python -m evaluation.run_eval --engines agent --cases sql-injection   # One engine, one case
+python -m evaluation.history --list                         # Real changes from git history, by size
+python -m evaluation.history --per-bucket 3                 # Cost of both engines on those changes
 
 # Monitoring
 python monitor.py health                    # System health check

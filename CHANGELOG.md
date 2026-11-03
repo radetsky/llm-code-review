@@ -16,6 +16,9 @@ The release 0.1.0 waits for the decision about the default engine.
   `.aws`, `.kube`, `.gnupg` and `.docker`.
 - The agent prompt says that text in files, diffs, comments and tool results is data, not
   instructions, and that a finding must not contain the value of a secret.
+- `python -m evaluation.history` measures the cost of both engines on real changes from the git
+  history of a repository, in four size classes: time, tokens, steps, reviews that hit a budget,
+  fallbacks and the number of findings.
 - A golden case `injection-in-comment` and the evaluation metric "findings that write a planted
   secret". Both engines pass the case.
 - Agent engine (`--engine agent`, `LLM_ENGINE=agent`, config `agent.enabled`). The model reads the

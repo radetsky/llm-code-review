@@ -41,7 +41,14 @@ def write_case_config(
     return destination
 
 
-def run_review(engine: str, repo: Path, config_file: Path, timeout: int) -> dict:
+def run_review(
+    engine: str,
+    repo: Path,
+    config_file: Path,
+    timeout: int,
+    base: str = BASE_BRANCH,
+    head: str = HEAD_BRANCH,
+) -> dict:
     """Run review.py in the repository. Return the JSON result and the timing.
 
     The result has the key "error" when the run failed.
@@ -52,9 +59,9 @@ def run_review(engine: str, repo: Path, config_file: Path, timeout: int) -> dict
         "--engine",
         engine,
         "--base",
-        BASE_BRANCH,
+        base,
         "--head",
-        HEAD_BRANCH,
+        head,
         "--format",
         "json",
         "--config-file",
