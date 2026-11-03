@@ -771,3 +771,295 @@ class TestStepCap:
     def test_the_cap_is_off_by_default(self, tools):
         result, _ = run(tools, [submit([])])
         assert result.agent_stats["step_cap"] == 20  # The value of max_steps.
+
+
+# -- thinking mode ---------------------------------------------------------
+
+
+def first_extra_body(client):
+    return client.requests[0].get("extra_body")
+
+
+class TestThinking:
+    def test_default_keeps_the_extra_body_of_the_config(self, tools):
+        tools.config.config["llm"]["extra_body"] = {
+            "chat_template_kwargs": {"enable_thinking": False},
+            "top_k": 5,
+        }
+        result, client = run(tools, [submit([])])
+        assert first_extra_body(client) == {
+            "chat_template_kwargs": {"enable_thinking": False},
+            "top_k": 5,
+        }
+        assert result.agent_stats["thinking"] == "default"
+
+    def test_on_sets_enable_thinking_and_keeps_the_other_fields(self, tools):
+        tools.config.config["llm"]["extra_body"] = {
+            "chat_template_kwargs": {"enable_thinking": False, "x": 1},
+            "top_k": 5,
+        }
+        tools.config.config["agent"]["thinking"] = "on"
+        result, client = run(tools, [submit([])])
+        assert first_extra_body(client) == {
+            "chat_template_kwargs": {"enable_thinking": True, "x": 1},
+            "top_k": 5,
+        }
+        assert result.agent_stats["thinking"] == "on"
+
+    def test_off_overrides_a_config_that_turns_thinking_on(self, tools):
+        tools.config.config["llm"]["extra_body"] = {
+            "chat_template_kwargs": {"enable_thinking": True}
+        }
+        tools.config.config["agent"]["thinking"] = "off"
+        _, client = run(tools, [submit([])])
+        assert (
+            first_extra_body(client)["chat_template_kwargs"]["enable_thinking"] is False
+        )
+
+    def test_without_an_extra_body_the_field_is_created(self, tools):
+        tools.config.config["llm"].pop("extra_body", None)
+        tools.config.config["agent"]["thinking"] = "on"
+        _, client = run(tools, [submit([])])
+        assert first_extra_body(client) == {
+            "chat_template_kwargs": {"enable_thinking": True}
+        }
+
+    def test_default_without_an_extra_body_sends_none(self, tools):
+        tools.config.config["llm"].pop("extra_body", None)
+        _, client = run(tools, [submit([])])
+        assert "extra_body" not in client.requests[0]
+
+    def test_the_config_is_not_changed(self, tools):
+        original = {"chat_template_kwargs": {"enable_thinking": False}}
+        tools.config.config["llm"]["extra_body"] = original
+        tools.config.config["agent"]["thinking"] = "on"
+        run(tools, [submit([])])
+        assert original == {"chat_template_kwargs": {"enable_thinking": False}}
+
+    def test_every_request_uses_the_mode_also_the_forced_one(self, tools):
+        tools.config.config["agent"].update({"thinking": "on", "max_steps": 1})
+        script = [reply(calls=[tool_call("grep", {"pattern": "x"})]), submit([])]
+        _, client = run(tools, script)
+        assert len(client.requests) == 2
+        assert all(
+            r["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+            for r in client.requests
+        )
+
+    def test_the_constructor_value_beats_the_config_and_the_environment(
+        self, tools, monkeypatch
+    ):
+        monkeypatch.setenv("LLM_AGENT_THINKING", "on")
+        tools.config.config["agent"]["thinking"] = "on"
+        client = FakeClient([submit([])])
+        result = AgentReviewer(tools.config, client=client, thinking="off").review(
+            tools
+        )
+        assert (
+            first_extra_body(client)["chat_template_kwargs"]["enable_thinking"] is False
+        )
+        assert result.agent_stats["thinking"] == "off"
+
+    def test_reasoning_text_is_not_sent_back_when_thinking_is_on(self, tools):
+        tools.config.config["agent"]["thinking"] = "on"
+        script = [
+            reply(
+                content="<think>long plan</think>",
+                calls=[tool_call("grep", {"pattern": "x"})],
+                reasoning="more thoughts",
+            ),
+            submit([]),
+        ]
+        _, client = run(tools, script)
+        assert "long plan" not in json.dumps(client.requests[1]["messages"])
+        assert "more thoughts" not in json.dumps(client.requests[1]["messages"])
+
+
+class TestThinkingSetting:
+    def test_precedence(self, monkeypatch):
+        config = ReviewConfig()
+        monkeypatch.delenv("LLM_AGENT_THINKING", raising=False)
+        assert config.get_agent_thinking() == "default"
+        config.config["agent"]["thinking"] = "on"
+        assert config.get_agent_thinking() == "on"
+        monkeypatch.setenv("LLM_AGENT_THINKING", "off")
+        assert config.get_agent_thinking() == "off"
+        assert config.get_agent_thinking("default") == "default"
+
+    def test_case_and_spaces(self, monkeypatch):
+        monkeypatch.setenv("LLM_AGENT_THINKING", " ON ")
+        assert ReviewConfig().get_agent_thinking() == "on"
+
+    @pytest.mark.parametrize("bad", ["yes", "true", "1", "thinking"])
+    def test_wrong_value(self, bad, monkeypatch):
+        monkeypatch.setenv("LLM_AGENT_THINKING", bad)
+        with pytest.raises(ValueError, match="Unsupported thinking mode"):
+            ReviewConfig().get_agent_thinking()
+
+
+# -- time limit ------------------------------------------------------------
+
+
+class Clock:
+    """A clock that only moves when the test moves it."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+class SlowClient:
+    """A fake client. Each script item is a function of (kwargs, clock)."""
+
+    def __init__(self, clock, script):
+        self.clock, self.script, self.requests = clock, list(script), []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    def _create(self, **kwargs):
+        self.requests.append(kwargs)
+        return self.script.pop(0)(kwargs, self.clock)
+
+
+def times_out(kwargs, clock):
+    clock.now += kwargs["timeout"]  # The request used all its time.
+    raise openai.APITimeoutError(request=httpx.Request("POST", "http://llm.invalid/v1"))
+
+
+def answers(response, takes=0.0):
+    def respond(kwargs, clock):
+        clock.now += takes
+        return response
+
+    return respond
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    c = Clock()
+    monkeypatch.setattr(agent_core.time, "monotonic", c.monotonic)
+    monkeypatch.setattr(agent_core.time, "sleep", c.sleep)
+    return c
+
+
+class TestTimeLimit:
+    def review(self, tools, clock, script, **agent):
+        tools.config.config["agent"].update(agent)
+        client = SlowClient(clock, script)
+        result = AgentReviewer(tools.config, client=client).review(tools)
+        return result, client
+
+    def test_the_client_does_no_retries_of_its_own(self, tools, monkeypatch):
+        seen = {}
+
+        class Capture:
+            def __init__(self, **kwargs):
+                seen.update(kwargs)
+
+        monkeypatch.setattr(agent_core, "OpenAI", Capture)
+        monkeypatch.setenv("LLM_API_KEY", "k")
+        AgentReviewer(tools.config)._get_client()
+        assert seen["max_retries"] == 0
+
+    def test_a_request_that_ends_the_time_limit_leads_to_a_forced_submit(
+        self, tools, clock
+    ):
+        result, client = self.review(
+            tools, clock, [times_out, answers(submit([finding()]))], wall_timeout_sec=30
+        )
+        assert [r["timeout"] for r in client.requests] == [
+            30,
+            60,
+        ]  # The wall time, then the grace time.
+        assert result.status == "success" and result.warnings == ["app.py:2: Problem"]
+        assert result.agent_stats["forced_submit"] == "wall_timeout"
+        assert clock.now == 30  # No sleep after the last timeout.
+
+    def test_the_total_time_stays_near_the_limit_when_every_request_hangs(
+        self, tools, clock
+    ):
+        result, client = self.review(
+            tools, clock, [times_out] * 10, wall_timeout_sec=30, final_timeout_sec=20
+        )
+        assert result.status == "model_unavailable"
+        assert (
+            len(client.requests) == 2
+        )  # One step and one forced request. No hidden retries.
+        assert clock.now <= 30 + 20 + 1
+
+    def test_a_retry_gets_only_the_time_that_is_left(self, tools, clock):
+        result, client = self.review(
+            tools,
+            clock,
+            [times_out_after(10), answers(submit([]), takes=1)],
+            wall_timeout_sec=100,
+        )
+        assert result.status == "success"
+        assert [round(r["timeout"]) for r in client.requests] == [
+            100,
+            89,
+        ]  # 10 s used and 1 s of sleep.
+
+    def test_no_retry_when_the_next_attempt_has_no_time(self, tools, clock):
+        _, client = self.review(
+            tools,
+            clock,
+            [times_out_after(29.5), answers(submit([]))],
+            wall_timeout_sec=30,
+        )
+        # After 29.5 s the wait of 1 s ends the limit. The forced request follows at once.
+        assert len(client.requests) == 2 and client.requests[1]["timeout"] == 60
+
+    def test_the_timeout_is_never_below_the_minimum(self, tools, clock):
+        _, client = self.review(tools, clock, [answers(submit([]))], wall_timeout_sec=2)
+        assert client.requests[0]["timeout"] == 5
+
+    def test_the_final_request_time_comes_from_the_config(self, tools, clock):
+        tools.config.config["agent"]["max_steps"] = 1
+        script = [
+            answers(reply(calls=[tool_call("grep", {"pattern": "x"})])),
+            answers(submit([])),
+        ]
+        _, client = self.review(tools, clock, script, final_timeout_sec=7)
+        assert client.requests[-1]["timeout"] == 7
+
+    def test_an_error_that_is_not_a_timeout_is_still_a_failure(self, tools, clock):
+        def server_down(kwargs, clock):
+            request = httpx.Request("POST", "http://llm.invalid/v1")
+            raise openai.APIStatusError(
+                "bad", response=httpx.Response(400, request=request), body=None
+            )
+
+        result, client = self.review(tools, clock, [server_down], wall_timeout_sec=30)
+        assert result.status == "model_unavailable" and len(client.requests) == 1
+
+    def test_a_timeout_before_the_limit_is_retried_as_before(self, tools, clock):
+        result, client = self.review(
+            tools,
+            clock,
+            [times_out_after(2), answers(submit([]))],
+            wall_timeout_sec=300,
+        )
+        assert result.status == "success" and len(client.requests) == 2
+
+    def test_the_trace_shows_the_request_once_when_it_is_retried(
+        self, tools, clock, capsys
+    ):
+        script = [times_out_after(2), answers(submit([]))]
+        client = SlowClient(clock, script)
+        AgentReviewer(tools.config, client=client, trace_llm=True).review(tools)
+        assert capsys.readouterr().err.count("----- LLM REQUEST BEGIN -----") == 1
+
+
+def times_out_after(seconds):
+    def fail(kwargs, clock):
+        clock.now += seconds
+        raise openai.APITimeoutError(
+            request=httpx.Request("POST", "http://llm.invalid/v1")
+        )
+
+    return fail

@@ -148,6 +148,7 @@ Git hooks (`hooks/pre-commit`, `hooks/pre-push`) never block: they always exit 0
 - `LLM_TIMEOUT` - Request timeout in seconds (default: 180)
 - `LLM_MAX_TOKENS_PER_REQUEST` - Max tokens per review chunk (default: 4096)
 - `LLM_ENGINE` - `agent` or `classic` (CLI `--engine` wins; then `agent.enabled` in config)
+- `LLM_AGENT_THINKING` - `default`, `on` or `off`: the thinking mode of the model for the agent (CLI `--thinking` wins; then `agent.thinking`)
 - `LLM_MONITORING` - `1` writes one line to the review log for each review (config `monitoring.enabled`)
 - `LLM_TOKEN_LIMIT_STRATEGY` - Strategy when exceeding tokens: `chunk`, `truncate`, or `skip` (default: `chunk`)
 

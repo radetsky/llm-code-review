@@ -79,6 +79,8 @@ class ReviewConfig:
         "output": {"format": "text", "show_context": True, "max_context_lines": 10},
         "agent": {
             "enabled": False,  # True makes the agent the default engine
+            "thinking": "default",  # "default": use llm.extra_body. "on" or "off": set enable_thinking for the agent.
+            "final_timeout_sec": 60,  # Time for the last request after a budget ends
             "max_tool_output_chars": 32000,
             "max_grep_matches": 50,
             "read_default_lines": 300,
@@ -247,6 +249,25 @@ class ReviewConfig:
         if env_value is not None:
             return env_value.lower() in ("true", "1", "yes")
         return bool(self.get("monitoring.enabled", False))
+
+    def get_agent_thinking(self, cli_value: str | None = None) -> str:
+        """Resolve the thinking mode of the agent: CLI flag, then LLM_AGENT_THINKING, then config.
+
+        Returns "default", "on" or "off". Raises ValueError for anything else.
+        "default" keeps llm.extra_body as it is. "on" and "off" set enable_thinking
+        in the requests of the agent only.
+        """
+        value = (
+            cli_value
+            or os.getenv("LLM_AGENT_THINKING")
+            or self.get("agent.thinking", "default")
+        )
+        value = str(value).strip().lower()
+        if value not in ("default", "on", "off"):
+            raise ValueError(
+                f"Unsupported thinking mode '{value}'. Use 'default', 'on' or 'off'."
+            )
+        return value
 
     def get_engine(self, cli_value: str | None = None) -> str:
         """Resolve the review engine: CLI flag, then LLM_ENGINE, then config.

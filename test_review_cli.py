@@ -64,8 +64,11 @@ class FakeAgent:
     outcome = result()
     instances: ClassVar[list] = []
 
-    def __init__(self, config, client=None, trace=False, trace_llm=False):
+    def __init__(
+        self, config, client=None, trace=False, trace_llm=False, thinking=None
+    ):
         self.trace, self.trace_llm = trace, trace_llm
+        self.thinking = thinking
         self.tools = None
         FakeAgent.instances.append(self)
 
@@ -581,3 +584,53 @@ class TestSecretsAreHidden:
         run_cli("--engine", "agent", "--mode", "staged")
         text = "".join(f.read_text() for f in (Path(repo) / "logs").glob("*.jsonl"))
         assert SECRET_TOKEN not in text and SECRET_HEX not in text
+
+
+class TestThinkingFlag:
+    def test_default(self, repo, fake_agent, monkeypatch):
+        monkeypatch.delenv("LLM_AGENT_THINKING", raising=False)
+        run_cli("--engine", "agent", "--mode", "staged")
+        assert fake_agent.instances[0].thinking == "default"
+
+    @pytest.mark.parametrize("value", ["on", "off", "default"])
+    def test_flag_reaches_the_agent(self, repo, fake_agent, value):
+        run_cli("--engine", "agent", "--thinking", value, "--mode", "staged")
+        assert fake_agent.instances[0].thinking == value
+
+    def test_flag_beats_the_environment(self, repo, fake_agent, monkeypatch):
+        monkeypatch.setenv("LLM_AGENT_THINKING", "on")
+        run_cli("--engine", "agent", "--thinking", "off", "--mode", "staged")
+        assert fake_agent.instances[0].thinking == "off"
+
+    def test_environment_and_config(self, repo, fake_agent, monkeypatch, tmp_path):
+        monkeypatch.setenv("LLM_AGENT_THINKING", "on")
+        run_cli("--engine", "agent", "--mode", "staged")
+        assert fake_agent.instances[0].thinking == "on"
+        monkeypatch.delenv("LLM_AGENT_THINKING")
+        config = tmp_path / "c.json"
+        config.write_text(json.dumps({"agent": {"thinking": "off"}}))
+        run_cli("--engine", "agent", "--mode", "staged", "--config-file", str(config))
+        assert fake_agent.instances[1].thinking == "off"
+
+    def test_wrong_flag_value(self, repo, fake_agent, capsys):
+        with pytest.raises(SystemExit) as error:
+            run_cli("--thinking", "maybe", "--mode", "staged")
+        assert error.value.code == 2
+
+    def test_wrong_environment_value_is_a_configuration_error(
+        self, repo, fake_agent, monkeypatch, capsys
+    ):
+        monkeypatch.setenv("LLM_AGENT_THINKING", "maybe")
+        assert run_cli("--engine", "agent", "--mode", "staged") == 4
+        assert "Unsupported thinking mode" in capsys.readouterr().err
+
+    def test_thinking_is_in_the_log(self, repo, fake_agent, monkeypatch):
+        monkeypatch.setenv("LLM_MONITORING", "1")
+        fake_agent.outcome = result(
+            stats={"steps": 3, "tokens": 9, "thinking": "on", "step_cap": 20}
+        )
+        run_cli("--engine", "agent", "--thinking", "on", "--mode", "staged")
+        entry = json.loads(
+            next((Path(repo) / "logs").glob("*.jsonl")).read_text().splitlines()[0]
+        )
+        assert entry["agent"]["thinking"] == "on" and entry["agent"]["step_cap"] == 20

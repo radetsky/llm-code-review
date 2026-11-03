@@ -39,6 +39,7 @@ class ReviewCLI:
         self.trace = trace
         self.trace_llm = trace_llm
         self.engine_used = "classic"
+        self.thinking = "default"
 
     def run(self, args=None):
         """Run CLI with provided arguments."""
@@ -81,6 +82,9 @@ class ReviewCLI:
         # Resolve engine and failure policy
         try:
             engine = self.config.get_engine(getattr(parsed_args, "engine", None))
+            self.thinking = self.config.get_agent_thinking(
+                getattr(parsed_args, "thinking", None)
+            )
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 4
@@ -256,6 +260,12 @@ Examples:
         )
 
         parser.add_argument(
+            "--thinking",
+            choices=["default", "on", "off"],
+            help="Agent engine: turn the thinking mode of the model on or off "
+            "(default: LLM_AGENT_THINKING, then agent.thinking, then llm.extra_body)",
+        )
+        parser.add_argument(
             "--max-steps",
             type=int,
             metavar="N",
@@ -389,7 +399,12 @@ Examples:
         else:
             source = RepoSource.for_diff_mode(args.mode or "staged")
         tools = AgentTools(self.config, source, self.parser, parsed_files)
-        agent = AgentReviewer(self.config, trace=self.trace, trace_llm=self.trace_llm)
+        agent = AgentReviewer(
+            self.config,
+            trace=self.trace,
+            trace_llm=self.trace_llm,
+            thinking=self.thinking,
+        )
         result = agent.review(tools)
         if result.status == "success":
             return result

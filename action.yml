@@ -28,6 +28,9 @@ inputs:
     description: 'Review engine: classic (one prompt) or agent (tool-calling loop). Default: classic'
     required: false
     default: 'classic'
+  thinking:
+    description: 'Agent engine: turn the thinking mode of the model on or off. Values: default, on, off. Default: use the config'
+    required: false
   max_steps:
     description: 'Agent engine: maximum number of steps (optional, default from the config)'
     required: false
@@ -95,6 +98,7 @@ runs:
         API_KEY: ${{ inputs.api_key }}
         INPUT_ENGINE: ${{ inputs.engine }}
         INPUT_MODE: ${{ inputs.mode }}
+        INPUT_THINKING: ${{ inputs.thinking }}
         INPUT_MAX_STEPS: ${{ inputs.max_steps }}
         INPUT_WALL_TIMEOUT: ${{ inputs.wall_timeout }}
         INPUT_CONTEXT: ${{ inputs.context }}
@@ -115,6 +119,15 @@ runs:
           *)
             echo "::warning::The engine is not known. The action uses classic."
             engine="classic"
+            ;;
+        esac
+
+        thinking="$INPUT_THINKING"
+        case "$thinking" in
+          "" | default | on | off) ;;
+          *)
+            echo "::warning::The thinking value is not known. The action ignores it."
+            thinking=""
             ;;
         esac
 
@@ -140,6 +153,7 @@ runs:
           echo "run=true"
           echo "engine=$engine"
           echo "mode=$mode"
+          echo "thinking=$thinking"
           echo "max_steps=$(number "$INPUT_MAX_STEPS")"
           echo "wall_timeout=$(number "$INPUT_WALL_TIMEOUT")"
           echo "context=$(number "$INPUT_CONTEXT")"
@@ -226,6 +240,7 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         ENGINE: ${{ steps.settings.outputs.engine }}
         MODE: ${{ steps.settings.outputs.mode }}
+        THINKING: ${{ steps.settings.outputs.thinking }}
         MAX_STEPS: ${{ steps.settings.outputs.max_steps }}
         WALL_TIMEOUT: ${{ steps.settings.outputs.wall_timeout }}
         CONTEXT: ${{ steps.settings.outputs.context }}
@@ -242,6 +257,7 @@ runs:
           args+=(--base "$BASE" --head "$HEAD")
         fi
         [ -n "$CONTEXT" ] && args+=(--context "$CONTEXT")
+        [ -n "$THINKING" ] && args+=(--thinking "$THINKING")
         [ -n "$MAX_STEPS" ] && args+=(--max-steps "$MAX_STEPS")
         [ -n "$WALL_TIMEOUT" ] && args+=(--wall-timeout "$WALL_TIMEOUT")
 

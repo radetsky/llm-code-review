@@ -115,6 +115,7 @@ llm-code-review --engine agent         # Agentic review: the model reads the rep
 llm-code-review --fail-on critical     # Exit 1 on critical issues (default: always exit 0)
 llm-code-review --fail-on warnings     # Exit 1 on warnings too (alias: --strict)
 llm-code-review --trace --trace-llm    # Print agent steps and the full LLM exchange
+llm-code-review --engine agent --thinking on   # Let the model think in the agent engine (slower)
 llm-code-review --verbose              # Detailed output
 llm-code-review --offline              # Static analysis only (no API key needed)
 llm-code-review --context 15           # Use 15 context lines around each change (default: 10)
@@ -261,6 +262,8 @@ repository, symlinks, binary files and secret files (`.env*`, `*.pem`, `id_rsa*`
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `false` | Use the agent engine when no flag or variable names an engine |
+| `thinking` | `default` | `default` keeps `llm.extra_body`. `on` or `off` sets `enable_thinking` for the agent only. The flag is `--thinking`, the variable is `LLM_AGENT_THINKING` |
+| `final_timeout_sec` | `60` | Time for the last request after a budget ends |
 | `max_steps` | `20` | Steps of exploration. The flag is `--max-steps` |
 | `steps_over_target` | `100` | The step cap is the step target (4 + 2 for each file) plus this number, and never more than `max_steps`. A high value turns the cap off |
 | `inline_diff_chars` | `0` | Put the diffs of this many characters in the first message. `0` turns it off (see the note below) |
@@ -270,6 +273,18 @@ repository, symlinks, binary files and secret files (`.env*`, `*.pem`, `id_rsa*`
 | `max_grep_matches` | `50` | Matches that one search returns |
 | `read_default_lines` | `300` | Lines that `read_file` returns if you give no range |
 | `max_read_scan_bytes` | `5000000` | The agent reads at most this much of one file |
+
+**Thinking.** You can let the model think before each step (`--thinking on`, `agent.thinking`, or the
+action input `thinking`). It is off by default, because it did not improve the result in our tests. On the
+17 golden cases the agent found all 65 planted problems with thinking off and with thinking on. The median
+time doubled (6.3 s and 11.9 s), the tokens grew by 30%, and some real changes took several minutes: one
+review of a large change did not finish in 15 minutes. Try it if your model does better with it or if
+quality matters more to you than time. The setting applies to the agent only. The classic engine follows
+`llm.extra_body`. The server must support `chat_template_kwargs.enable_thinking`, as Qwen on SGLang does.
+
+**Time limit.** `wall_timeout_sec` limits the time for the steps. Each request gets only the time that is
+left, and a request that the limit cuts leads to the last request, which gets `final_timeout_sec`. So a
+review ends about `wall_timeout_sec + final_timeout_sec` after it starts.
 
 The options `steps_over_target` and `inline_diff_chars` are off by default. In a test on the golden
 cases, diffs in the first message made the agent read less code in other files: it found the problem
@@ -480,6 +495,7 @@ engine and then to static analysis. To run both engines on one pull request, use
 | `base_url` | API endpoint URL | No | config |
 | `model` | Model name | No | config |
 | `engine` | `classic` or `agent` | No | `classic` |
+| `thinking` | Agent: `default`, `on` or `off` (the thinking mode of the model) | No | config (`agent.thinking`) |
 | `max_steps` | Agent: maximum number of steps | No | config (`agent.max_steps`) |
 | `wall_timeout` | Agent: time limit in seconds | No | config (`agent.wall_timeout_sec`) |
 | `mode` | `staged`, `unstaged` or `all` (instead of `base`/`head`) | No | - |

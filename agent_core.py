@@ -11,6 +11,7 @@ Qwen/SGLang specifics handled here: ``<think>`` blocks in content,
 arguments, and several tool calls in one message (up to 4 run in order).
 """
 
+import copy
 import json
 import re
 import sys
@@ -18,6 +19,7 @@ import time
 from typing import Any
 
 import json5
+import openai
 from openai import OpenAI, OpenAIError
 
 from agent_prompt import build_system_prompt, build_task_message
@@ -28,6 +30,7 @@ from review_core import CodeSuggestion, ReviewResult
 SUBMIT_TOOL = "submit_review"
 MAX_NUDGES = 2
 MAX_CALLS_PER_STEP = 4
+MIN_REQUEST_TIMEOUT = 5  # Seconds that one request gets at least
 MAX_STALE_STEPS = 2  # Number of steps in a row that mostly repeat earlier calls.
 BASE_STEP_TARGET = 4  # Steps for a change with no files.
 STEPS_PER_FILE = 2  # More steps for each changed file.
@@ -158,10 +161,16 @@ class AgentReviewer:
     """Runs the tool-calling review loop."""
 
     def __init__(
-        self, config, client=None, trace: bool = False, trace_llm: bool = False
+        self,
+        config,
+        client=None,
+        trace: bool = False,
+        trace_llm: bool = False,
+        thinking: str | None = None,
     ):
         self.config = config
         self.client = client
+        self._thinking = thinking  # The CLI value. None means: ask the config.
         self.trace = trace
         self.trace_llm = trace_llm
         self._printed = 0  # messages already shown by trace_llm
@@ -179,6 +188,7 @@ class AgentReviewer:
                 base_url=self.config.get_base_url(),
                 api_key=api_key,
                 timeout=self.config.get_timeout(),
+                max_retries=0,  # The loop of this class does the retries and keeps the time limit.
             )
         return self.client
 
@@ -234,31 +244,54 @@ class AgentReviewer:
         status = getattr(error, "status_code", None)
         return status is None or status == 429 or status >= 500
 
+    def thinking_mode(self) -> str:
+        """Return "default", "on" or "off"."""
+        return self._thinking or self.config.get_agent_thinking()
+
+    def _extra_body(self) -> dict | None:
+        """Return the extra request fields. The setting agent.thinking can change enable_thinking."""
+        extra = self.config.get_extra_body()
+        mode = self.thinking_mode()
+        if mode == "default":
+            return extra
+        merged = copy.deepcopy(extra) if extra else {}
+        kwargs = merged.get("chat_template_kwargs")
+        if not isinstance(kwargs, dict):
+            kwargs = merged["chat_template_kwargs"] = {}
+        kwargs["enable_thinking"] = mode == "on"
+        return merged
+
     def _chat(
-        self, messages: list[dict], tools: list[dict], tool_choice: Any, timeout: float
+        self, messages: list[dict], tools: list[dict], tool_choice: Any, deadline: float
     ):
-        """One chat completion with retry on transient errors."""
+        """One chat completion with retry on transient errors.
+
+        Each attempt gets the time that is left until the deadline (at least
+        MIN_REQUEST_TIMEOUT seconds). The method does not retry when the time is over.
+        """
         kwargs: dict[str, Any] = {
             "model": self.config.get_model(),
             "messages": messages,
             "tools": tools,
             "tool_choice": tool_choice,
             "temperature": 0.1,
-            "timeout": timeout,
         }
-        extra = self.config.get_extra_body()
+        extra = self._extra_body()
         if extra:
             kwargs["extra_body"] = extra
-        self._trace_request(kwargs, messages)
 
         retries = int(self.config.get("llm.max_retries", 3))
+        kwargs["timeout"] = max(deadline - time.monotonic(), MIN_REQUEST_TIMEOUT)
+        self._trace_request(kwargs, messages)
         for attempt in range(retries + 1):
+            kwargs["timeout"] = max(deadline - time.monotonic(), MIN_REQUEST_TIMEOUT)
             try:
                 return self._get_client().chat.completions.create(**kwargs)
             except OpenAIError as e:
-                if attempt >= retries or not self._is_retryable(e):
-                    raise
                 delay = min(2**attempt, 10)
+                out_of_time = time.monotonic() + delay >= deadline
+                if attempt >= retries or not self._is_retryable(e) or out_of_time:
+                    raise
                 self._trace(
                     f"LLM call failed ({e}); retry {attempt + 1}/{retries} in {delay}s"
                 )
@@ -282,6 +315,7 @@ class AgentReviewer:
         max_tokens = int(cfg.get("agent.max_total_tokens", 1000000))
         wall = float(cfg.get("agent.wall_timeout_sec", 300))
         started = time.monotonic()
+        deadline = started + wall
         self._printed = 0
 
         stats = {
@@ -309,6 +343,7 @@ class AgentReviewer:
         )
         stats["step_target"] = step_target
         stats["step_cap"] = max_steps
+        stats["thinking"] = self.thinking_mode()
         system_prompt = build_system_prompt(
             cfg, tools.parsed_files, tools.source, step_target
         )
@@ -325,9 +360,6 @@ class AgentReviewer:
             self._trace(f"Agent done: {json.dumps(stats)}")
             return result
 
-        def remaining() -> float:
-            return max(wall - (time.monotonic() - started), 1.0)
-
         try:
             while True:
                 reason = None
@@ -343,13 +375,25 @@ class AgentReviewer:
                     reason = "repeated_calls"
                 if reason:
                     return finish(
-                        self._force_submit(
-                            tools, messages, specs, stats, reason, remaining
-                        )
+                        self._force_submit(tools, messages, specs, stats, reason)
                     )
 
                 stats["steps"] += 1
-                response = self._chat(messages, specs, "auto", remaining())
+                try:
+                    response = self._chat(messages, specs, "auto", deadline)
+                except OpenAIError as error:
+                    # A request that was cut by the time limit is not a failure of the model.
+                    if (
+                        isinstance(error, openai.APITimeoutError)
+                        and time.monotonic() >= deadline - 1
+                    ):
+                        self._trace("The time limit ended during a request")
+                        return finish(
+                            self._force_submit(
+                                tools, messages, specs, stats, "wall_timeout"
+                            )
+                        )
+                    raise
                 message = self._message(response)
                 stats["tokens"] += self._tokens_used(response, messages, message)
                 self._trace_response(message, stats["tokens"])
@@ -497,9 +541,7 @@ class AgentReviewer:
             raw_response=reason,
         )
 
-    def _force_submit(
-        self, tools, messages, specs, stats, reason, remaining
-    ) -> ReviewResult:
+    def _force_submit(self, tools, messages, specs, stats, reason) -> ReviewResult:
         """Ask for the final review when a budget is exhausted."""
         stats["forced_submit"] = reason
         stats["stop_reason"] = f"forced:{reason}"
@@ -511,7 +553,8 @@ class AgentReviewer:
             }
         )
         forced = {"type": "function", "function": {"name": SUBMIT_TOOL}}
-        response = self._chat(messages, [SUBMIT_SPEC], forced, remaining())
+        grace = float(self.config.get("agent.final_timeout_sec", 60))
+        response = self._chat(messages, [SUBMIT_SPEC], forced, time.monotonic() + grace)
         message = self._message(response)
         stats["tokens"] += self._tokens_used(response, messages, message)
         self._trace_response(message, stats["tokens"])

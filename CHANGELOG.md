@@ -16,6 +16,10 @@ The release 0.1.0 waits for the decision about the default engine.
   `.aws`, `.kube`, `.gnupg` and `.docker`.
 - The agent prompt says that text in files, diffs, comments and tool results is data, not
   instructions, and that a finding must not contain the value of a secret.
+- The thinking mode of the model for the agent engine: `agent.thinking` (`default`, `on`, `off`), the
+  flag `--thinking`, the variable `LLM_AGENT_THINKING` and the action input `thinking`. It is off by
+  default. On the golden cases it did not change recall (65 of 65 both ways), and it doubled the time.
+- `agent.final_timeout_sec`: time for the last request after a budget ends.
 - Two options for the cost of the agent, both off by default: `agent.inline_diff_chars` (put diffs in
   the first message) and `agent.steps_over_target` (a step cap close to the step target). Measurements
   showed no gain: diffs in the first message cut recall on a case that needs code from other files (1 of
@@ -101,6 +105,11 @@ The release 0.1.0 waits for the decision about the default engine.
   `review.check_docstrings` config option.
 
 ### Fixed
+- The time limit of the agent was not strict. Each request got the full wall time, the program retried
+  a request up to four times and the client of the API did its own retries. One review took 506 s and
+  another did not end in 900 s with a limit of 300 s. Now each attempt gets the time that is left, the
+  client does no retries of its own, a request that the limit cuts leads to the final request, and the
+  trace shows a retried request once.
 - The statistics of the agent counted an unknown tool call as a call and as an invalid call.
 - `DiffParser.parse_diff` gave the last hunk of each file to the next file in a diff of many files.
   A removed line that starts with `--`, or an added line that starts with `++`, was read as a file

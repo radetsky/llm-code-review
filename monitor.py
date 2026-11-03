@@ -224,6 +224,8 @@ class MonitoringUtils:
 AGENT_STAT_KEYS = (
     "steps",
     "step_target",
+    "step_cap",
+    "thinking",
     "tokens",
     "tool_calls",
     "invalid_tool_calls",
