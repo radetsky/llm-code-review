@@ -193,7 +193,7 @@ class TestBuildSystemPrompt:
 
 
 class TestReachTheModel:
-    def test_first_request_has_blocks_and_rules(self, tools):  # noqa: F811
+    def test_first_request_has_blocks_and_rules(self, tools):
         tools.config.config["prompt"].update(
             custom_critical_rules=["no eval"], language_blocks=["go"]
         )
@@ -204,17 +204,17 @@ class TestReachTheModel:
         assert "Try to finish in 6 steps or fewer." in system
         assert not re.search(r"\{\w+\}", system)
 
-    def test_django_is_found_from_the_real_repository(self, tools, tmp_path):  # noqa: F811
+    def test_django_is_found_from_the_real_repository(self, tools, tmp_path):
         (tmp_path / "manage.py").write_text("# django\n")
         subprocess.run(["git", "add", "manage.py"], cwd=tmp_path, check=True)
         _, client = run(tools, [submit([])])
         assert "Django checks:" in client.requests[0]["messages"][0]["content"]
 
-    def test_no_block_without_manage_py(self, tools):  # noqa: F811
+    def test_no_block_without_manage_py(self, tools):
         _, client = run(tools, [submit([])])
         assert "Django checks:" not in client.requests[0]["messages"][0]["content"]
 
-    def test_prompt_edits_apply(self, tools, monkeypatch):  # noqa: F811
+    def test_prompt_edits_apply(self, tools, monkeypatch):
         import prompts
 
         original = prompts.load_prompt
@@ -265,7 +265,7 @@ def make_tools(tmp_path, monkeypatch, files: dict[str, int]):
 
 
 class TestTaskMessage:
-    def test_a_small_diff_is_in_the_message(self, tools):  # noqa: F811
+    def test_a_small_diff_is_in_the_message(self, tools):
         from agent_prompt import build_task_message
 
         tools.config.config["agent"]["inline_diff_chars"] = 24000
@@ -279,7 +279,7 @@ class TestTaskMessage:
         assert "Then call submit_review." in text
         assert "\n\n\n" not in text and not re.search(r"\{\w+\}", text)
 
-    def test_get_diff_for_a_shown_file_is_not_repeated(self, tools):  # noqa: F811
+    def test_get_diff_for_a_shown_file_is_not_repeated(self, tools):
         from agent_prompt import build_task_message
 
         tools.config.config["agent"]["inline_diff_chars"] = 24000
@@ -287,7 +287,7 @@ class TestTaskMessage:
         out = tools.call("get_diff", {"path": "app.py"})
         assert out.startswith("You already got this result")
 
-    def test_the_option_is_off_by_default(self, tools):  # noqa: F811
+    def test_the_option_is_off_by_default(self, tools):
         from agent_prompt import build_task_message
 
         assert tools.config.get("agent.inline_diff_chars") == 0
@@ -337,7 +337,7 @@ class TestTaskMessage:
         text = build_task_message(multi.config, multi)
         assert text.count("File: ") == 1  # The second diff does not fit in the rest.
 
-    def test_the_first_request_has_the_diff(self, tools):  # noqa: F811
+    def test_the_first_request_has_the_diff(self, tools):
         tools.config.config["agent"]["inline_diff_chars"] = 24000
         _, client = run(tools, [submit([])])
         first = client.requests[0]["messages"][1]["content"]

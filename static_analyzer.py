@@ -4,7 +4,7 @@ Provides basic security and code quality analysis.
 """
 
 import re
-from typing import List, Dict, Any
+from typing import Any
 
 
 class StaticAnalyzer:
@@ -129,7 +129,7 @@ class StaticAnalyzer:
             fallback_used=True,
         )
 
-    def _extract_added_lines(self, diff_content: str) -> List[Dict[str, str]]:
+    def _extract_added_lines(self, diff_content: str) -> list[dict[str, str]]:
         """Extract added lines from diff with file context and line numbers."""
         lines = []
         current_file = "unknown"
@@ -161,7 +161,7 @@ class StaticAnalyzer:
 
         return lines
 
-    def _check_credentials(self, line: str, file_path: str) -> List[str]:
+    def _check_credentials(self, line: str, file_path: str) -> list[str]:
         """Check for hardcoded credentials."""
         issues = []
 
@@ -181,7 +181,7 @@ class StaticAnalyzer:
 
         return issues
 
-    def _check_sql_injection(self, line: str, file_path: str) -> List[str]:
+    def _check_sql_injection(self, line: str, file_path: str) -> list[str]:
         """Check for SQL injection vulnerabilities."""
         issues = []
 
@@ -199,7 +199,7 @@ class StaticAnalyzer:
 
         return issues
 
-    def _check_unsafe_functions(self, line: str, file_path: str) -> List[str]:
+    def _check_unsafe_functions(self, line: str, file_path: str) -> list[str]:
         """Check for unsafe function usage."""
         issues = []
 
@@ -222,7 +222,7 @@ class StaticAnalyzer:
 
         return issues
 
-    def _check_file_operations(self, line: str, file_path: str) -> List[str]:
+    def _check_file_operations(self, line: str, file_path: str) -> list[str]:
         """Check for unsafe file operations."""
         issues = []
 
@@ -241,7 +241,7 @@ class StaticAnalyzer:
 
         return issues
 
-    def _check_hardcoded_urls(self, line: str, file_path: str) -> List[str]:
+    def _check_hardcoded_urls(self, line: str, file_path: str) -> list[str]:
         """Check for hardcoded URLs."""
         warnings = []
 
@@ -251,14 +251,12 @@ class StaticAnalyzer:
         ]
 
         for pattern in url_patterns:
-            if re.search(pattern, line):
-                # Skip localhost and common development URLs
-                if not any(
-                    skip in line.lower()
-                    for skip in ["localhost", "127.0.0.1", "0.0.0.0"]
-                ):
-                    warnings.append(f"{file_path}: Hardcoded URL detected")
-                    break
+            # Skip localhost and common development URLs
+            if re.search(pattern, line) and not any(
+                skip in line.lower() for skip in ["localhost", "127.0.0.1", "0.0.0.0"]
+            ):
+                warnings.append(f"{file_path}: Hardcoded URL detected")
+                break
 
         return warnings
 
@@ -296,7 +294,7 @@ class StaticAnalyzer:
         ],
     }
 
-    def _check_debug_code(self, line: str, file_path: str) -> List[str]:
+    def _check_debug_code(self, line: str, file_path: str) -> list[str]:
         """Check for debug code that shouldn't be in production."""
         warnings = []
 
@@ -317,7 +315,7 @@ class StaticAnalyzer:
 
         return warnings
 
-    def _suggest_improvements(self, line: str, file_path: str) -> List[str]:
+    def _suggest_improvements(self, line: str, file_path: str) -> list[str]:
         """Suggest code improvements."""
         suggestions = []
 
@@ -348,7 +346,7 @@ class StaticAnalyzer:
         canonical = self._EXT_ALIASES.get(ext, ext)
         return self.DOCSTRING_PATTERNS.get(canonical)
 
-    def _count_body_lines(self, lines: List[str], start_index: int, ext: str) -> int:
+    def _count_body_lines(self, lines: list[str], start_index: int, ext: str) -> int:
         """Count the number of body lines for a definition starting at start_index."""
         canonical = self._EXT_ALIASES.get(ext, ext)
 
@@ -380,19 +378,18 @@ class StaticAnalyzer:
                         started = True
                     elif ch == "}":
                         depth -= 1
-                if started and j > start_index:
-                    if lines[j].strip():
-                        count += 1
+                if started and j > start_index and lines[j].strip():
+                    count += 1
                 if started and depth <= 0:
                     break
             return count
 
-    def _check_docstrings(self, added_lines: List[Dict[str, str]]) -> List[str]:
+    def _check_docstrings(self, added_lines: list[dict[str, str]]) -> list[str]:
         """Check added lines for functions/classes missing docstrings."""
         suggestions = []
 
         # Group added lines by file, preserving order
-        files: Dict[str, List[str]] = {}
+        files: dict[str, list[str]] = {}
         for line_info in added_lines:
             fp = line_info["file"]
             if fp not in files:

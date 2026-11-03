@@ -9,13 +9,14 @@ import json
 import logging
 import sys
 import time
-from typing import Dict, Any
 from pathlib import Path
-from config import ReviewConfig
-from hybrid_core import HybridReviewer
+from typing import Any
+
 from agent_core import AgentReviewer
 from agent_tools import AgentTools
+from config import ReviewConfig
 from diff_parser import DiffParser, RepoSource
+from hybrid_core import HybridReviewer
 from redaction import redact, redact_result
 from review_core import LLMReviewer, ReviewResult
 
@@ -354,7 +355,7 @@ Examples:
                     "model": self.config.get_model(),
                 },
             )
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             logging.getLogger(__name__).warning(
                 "Could not write the review log: %s", error
             )
@@ -379,7 +380,7 @@ Examples:
             print(f"Analyzing {len(parsed_files)} file(s):", file=sys.stderr)
             for file_data in parsed_files:
                 print(f"  - {file_data['path']} ({file_data['type']})", file=sys.stderr)
-            print("", file=sys.stderr)
+            print(file=sys.stderr)
 
         return parsed_files, formatted_diff
 
@@ -459,7 +460,7 @@ Examples:
             output = self._format_text_output(result, args.verbose)
             print(output)
 
-    def _format_json_output(self, result: ReviewResult, args=None) -> Dict[str, Any]:
+    def _format_json_output(self, result: ReviewResult, args=None) -> dict[str, Any]:
         """Format results as JSON."""
         return {
             "status": result.status,
@@ -590,7 +591,7 @@ Examples:
                         f"  - {file_data['path']} ({file_data['type']})",
                         file=sys.stderr,
                     )
-                print("", file=sys.stderr)
+                print(file=sys.stderr)
 
         original_value = self.config.get("review.check_docstrings", True)
         self.config.config.setdefault("review", {})["check_docstrings"] = True

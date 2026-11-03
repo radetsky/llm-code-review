@@ -5,6 +5,7 @@ The release 0.1.0 waits for the decision about the default engine.
 ## [Unreleased]
 
 ### Fixed
+- `ruff check` and `ruff format --check` pass for the whole project (old findings fixed; `ruff.toml` ignores `BLE001`, `DTZ005` and `RUF012` on purpose).
 - A chunked classic review uses the backup model and the static analysis when the model is down, and it returns `model_unavailable`, not `error`.
 - The pull request comment script uses a fence that is longer than the backticks in a suggested change. It no longer takes a comment of another bot, and it removes backticks from a file name in the summary.
 - The action ignores `llm.base_url` of the config file in GitHub Actions. A pull request can change that file and send the API key to another server. Set the input `base_url`.
@@ -13,6 +14,7 @@ The release 0.1.0 waits for the decision about the default engine.
 - The hybrid engine keeps the notices of the classic engine (failed chunks, truncated review, backup model) and the coverage numbers. It reports the candidates over the limit as not verified.
 
 ### Added
+- CI workflow `.github/workflows/ci.yml`: `ruff check`, `ruff format --check`, the Python tests and the JavaScript tests on Python 3.11 and 3.13. It needs no secrets.
 - Engine `hybrid` (`hybrid_core.py`): the classic engine lists candidate problems, and the agent checks
   each one with the tools. Config section `hybrid` (`max_candidates`, `base_steps`, `steps_per_candidate`,
   `when_no_candidates`). If the check fails, the result of the classic engine is used (`hybrid->classic`).

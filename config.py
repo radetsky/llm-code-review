@@ -3,11 +3,11 @@ Configuration management for LLM code review system.
 """
 
 import copy
-import os
 import json
 import logging
-from typing import Dict, Any, Optional
+import os
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +107,11 @@ class ReviewConfig:
         },
     }
 
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_file: str | None = None):
         self.config_file = config_file or "review_config.json"
         self.config = self._load_config()
 
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_config(self) -> dict[str, Any]:
         """Load configuration from file or use defaults."""
         config_path = Path(self.config_file)
 
@@ -121,15 +121,15 @@ class ReviewConfig:
                     user_config = json.load(f)
                 logger.debug("Loaded configuration from %s", self.config_file)
                 return self._merge_configs(self.DEFAULT_CONFIG, user_config)
-            except (json.JSONDecodeError, IOError) as e:
+            except (OSError, json.JSONDecodeError) as e:
                 logger.warning("Could not load config file %s: %s", self.config_file, e)
                 logger.info("Using default configuration")
 
         return copy.deepcopy(self.DEFAULT_CONFIG)
 
     def _merge_configs(
-        self, default: Dict[str, Any], user: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, default: dict[str, Any], user: dict[str, Any]
+    ) -> dict[str, Any]:
         """Recursively merge user config with defaults."""
         result = copy.deepcopy(default)
 
@@ -157,7 +157,7 @@ class ReviewConfig:
         except (KeyError, TypeError):
             return default
 
-    def get_api_key(self) -> Optional[str]:
+    def get_api_key(self) -> str | None:
         """Get API key from environment. LLM_API_KEY takes precedence."""
         env_key = os.getenv("LLM_API_KEY")
         if env_key:
@@ -173,7 +173,7 @@ class ReviewConfig:
         logger.warning("API key not found. Set LLM_API_KEY environment variable.")
         return None
 
-    def get_base_url(self) -> Optional[str]:
+    def get_base_url(self) -> str | None:
         """Get LLM base URL. Environment variable takes precedence over config."""
         env_url = os.getenv("LLM_BASE_URL")
         if env_url:
@@ -314,7 +314,7 @@ class ReviewConfig:
         logger.debug("Using chars_per_token: %d", config_value)
         return config_value
 
-    def get_extra_body(self) -> Optional[Dict[str, Any]]:
+    def get_extra_body(self) -> dict[str, Any] | None:
         """Get extra request body fields for the LLM API (e.g. chat_template_kwargs)."""
         return self.get("llm.extra_body") or None
 
@@ -357,5 +357,5 @@ class ReviewConfig:
             with open(self.config_file, "w") as f:
                 json.dump(self.config, f, indent=2)
             logger.debug("Saved configuration to %s", self.config_file)
-        except IOError as e:
+        except OSError as e:
             logger.error("Could not save config file %s: %s", self.config_file, e)

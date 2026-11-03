@@ -9,7 +9,7 @@ import posixpath
 import re
 import subprocess
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 
 class DiffParser:
@@ -21,8 +21,8 @@ class DiffParser:
     def get_diff(
         self,
         mode: str = "staged",
-        base: Optional[str] = None,
-        head: Optional[str] = None,
+        base: str | None = None,
+        head: str | None = None,
     ) -> str:
         """Get git diff based on mode."""
         context = self.config.get("output.max_context_lines", 10)
@@ -41,7 +41,7 @@ class DiffParser:
         else:
             raise ValueError(f"Unsupported diff mode: {mode}")
 
-    def _run_git(self, args: List[str]) -> str:
+    def _run_git(self, args: list[str]) -> str:
         """Run git command and return output."""
         try:
             result = subprocess.run(
@@ -58,7 +58,7 @@ class DiffParser:
         except FileNotFoundError:
             raise RuntimeError("Git command not found")
 
-    def parse_diff(self, diff_text: str) -> List[Dict[str, Any]]:
+    def parse_diff(self, diff_text: str) -> list[dict[str, Any]]:
         """Parse diff text into structured list of file changes."""
         if not diff_text.strip():
             return []
@@ -187,7 +187,7 @@ class DiffParser:
 
         return self._filter_files(files)
 
-    def _filter_files(self, files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _filter_files(self, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter files based on configuration."""
         filtered_files = []
 
@@ -204,7 +204,7 @@ class DiffParser:
 
         return filtered_files
 
-    def format_for_llm(self, parsed_files: List[Dict[str, Any]]) -> str:
+    def format_for_llm(self, parsed_files: list[dict[str, Any]]) -> str:
         """Format parsed diff for LLM consumption."""
         if not parsed_files:
             return "No code changes to review."
@@ -254,7 +254,7 @@ class DiffParser:
 
         return "\n".join(formatted_sections)
 
-    def get_changed_files_list(self, mode: str = "staged") -> List[str]:
+    def get_changed_files_list(self, mode: str = "staged") -> list[str]:
         """Get list of changed files."""
         if mode == "staged":
             result = self._run_git(["diff", "--cached", "--name-only"])

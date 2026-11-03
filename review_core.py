@@ -4,11 +4,10 @@ Based on existing hello_llm.py structure.
 """
 
 import json
+import logging
+import random
 import re
 import time
-import random
-import logging
-from typing import List, Optional, Tuple
 from dataclasses import dataclass, field
 
 from openai import OpenAI, OpenAIError
@@ -34,15 +33,15 @@ class ReviewResult:
     """Result of LLM code review."""
 
     status: str  # "success", "model_unavailable", "error", "skipped" - technical status of LLM operation
-    critical_issues: List[str]
-    warnings: List[str]
-    suggestions: List[str]
+    critical_issues: list[str]
+    warnings: list[str]
+    suggestions: list[str]
     fallback_used: bool = False
-    raw_response: Optional[str] = None
+    raw_response: str | None = None
     chunks_reviewed: int = 0
     total_chunks: int = 0
-    code_suggestions: List[CodeSuggestion] = field(default_factory=list)
-    agent_stats: Optional[dict] = None  # Filled by the agent engine only
+    code_suggestions: list[CodeSuggestion] = field(default_factory=list)
+    agent_stats: dict | None = None  # Filled by the agent engine only
     redacted_count: int = 0  # Values that look like secrets and were hidden
 
     @property
@@ -124,7 +123,7 @@ class LLMReviewer:
         chars_per_token = self.config.get_chars_per_token()
         return len(text) // chars_per_token
 
-    def _check_token_limit(self, prompt: str) -> Tuple[bool, int, int]:
+    def _check_token_limit(self, prompt: str) -> tuple[bool, int, int]:
         """Check if prompt exceeds token limit.
 
         Returns:
@@ -141,7 +140,7 @@ class LLMReviewer:
 
     def _truncate_diff(
         self, diff_content: str, max_chars: int
-    ) -> Tuple[str, List[str]]:
+    ) -> tuple[str, list[str]]:
         """Truncate diff at file boundaries to fit within character limit.
 
         Returns:
@@ -155,7 +154,7 @@ class LLMReviewer:
         file_start_idx = 0
 
         for i, line in enumerate(lines):
-            if line.startswith("diff --git") or line.startswith("File:"):
+            if line.startswith(("diff --git", "File:")):
                 if current_file and current_size > max_chars:
                     result_lines = result_lines[:file_start_idx]
                     skipped_files.append(current_file)
@@ -172,7 +171,7 @@ class LLMReviewer:
 
         return ("\n".join(result_lines), skipped_files)
 
-    def _chunk_diff(self, diff_content: str, max_chars: int) -> List[str]:
+    def _chunk_diff(self, diff_content: str, max_chars: int) -> list[str]:
         """Split diff into chunks at file boundaries.
 
         Each chunk will contain complete files and fit within the character limit.
@@ -186,7 +185,7 @@ class LLMReviewer:
         lines = diff_content.split("\n")
 
         for line in lines:
-            is_file_boundary = line.startswith("diff --git") or line.startswith("File:")
+            is_file_boundary = line.startswith(("diff --git", "File:"))
 
             if is_file_boundary and current_file_lines:
                 if current_chunk_size + current_file_size <= max_chars:
@@ -304,7 +303,7 @@ class LLMReviewer:
                     last_api_error = e
                 self.logger.warning(f"Failed to review chunk {i + 1}: {e}")
                 all_warnings.append(
-                    f"Chunk {i + 1}/{total_chunks} review failed: {str(e)}"
+                    f"Chunk {i + 1}/{total_chunks} review failed: {e!s}"
                 )
 
         if chunks_reviewed == 0 and last_api_error is not None:
@@ -388,7 +387,7 @@ class LLMReviewer:
                 self.logger.error(f"Unexpected error during LLM review: {e}")
                 return ReviewResult(
                     status="error",
-                    critical_issues=[f"Review system error: {str(e)}"],
+                    critical_issues=[f"Review system error: {e!s}"],
                     warnings=[],
                     suggestions=[],
                 )
@@ -453,7 +452,7 @@ class LLMReviewer:
             )
         except OpenAIError as e:
             self._trace_print(f"LLM Query failed: {e}")
-            raise e
+            raise
 
         # Handle non-standard API responses that return string instead of ChatCompletion object
         if isinstance(response, str):
@@ -598,7 +597,7 @@ class LLMReviewer:
         result = ReviewResult(
             status="model_unavailable",
             critical_issues=[],
-            warnings=[f"🔴 LLM model unavailable: {str(error)}"],
+            warnings=[f"🔴 LLM model unavailable: {error!s}"],
             suggestions=[],
         )
 
@@ -636,8 +635,8 @@ class LLMReviewer:
             self._trace_print("Fallback: using static analysis")
             try:
                 # Direct import for testing
-                import sys
                 import os
+                import sys
 
                 sys.path.append(os.path.dirname(__file__))
                 from static_analyzer import StaticAnalyzer

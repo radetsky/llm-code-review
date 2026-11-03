@@ -8,13 +8,10 @@ Environment variables:
 - LLM_MODEL    – Model name (default: `gpt-oss:20b`)
 """
 
-import os
 import logging
-from typing import Optional
+import os
 
-from openai import OpenAI
-from openai import OpenAIError
-
+from openai import OpenAI, OpenAIError
 
 # Basic logging setup
 logging.basicConfig(
@@ -28,13 +25,13 @@ def get_client() -> OpenAI:
     """Create and return an OpenAI client using the required environment variables."""
     api_key = os.getenv("LLM_API_KEY")
     if not api_key:
-        raise EnvironmentError("LLM_API_KEY is not set in the environment.")
+        raise OSError("LLM_API_KEY is not set in the environment.")
 
     base_url = os.getenv("LLM_BASE_URL", "https://llm.dev.cossacklabs.com/api")
     return OpenAI(base_url=base_url, api_key=api_key)
 
 
-def ask_gpt(message: str, *, model: Optional[str] = None) -> str:
+def ask_gpt(message: str, *, model: str | None = None) -> str:
     """Return the LLM response to the provided message."""
     client = get_client()
     model = model or os.getenv("LLM_MODEL", "gpt-oss:20b")

@@ -61,7 +61,7 @@ def write_entry(
 
 def now():
     """Local time without a time zone. monitor.py names its log files the same way."""
-    return datetime.now()  # noqa: DTZ005
+    return datetime.now()
 
 
 @pytest.fixture

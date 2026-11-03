@@ -4,11 +4,11 @@ Utilities for monitoring and maintenance of LLM code review system.
 """
 
 import json
-import sys
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 
 # Add current directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -24,7 +24,7 @@ class MonitoringUtils:
         self.config = config or ReviewConfig()
         self.logs_dir = Path(logs_dir or self.config.get("monitoring.log_dir", "logs"))
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Perform comprehensive health check."""
         results = {"timestamp": datetime.now().isoformat(), "checks": {}}
 
@@ -53,7 +53,7 @@ class MonitoringUtils:
 
         return results
 
-    def _check_configuration(self) -> Dict[str, Any]:
+    def _check_configuration(self) -> dict[str, Any]:
         """Check configuration files and environment."""
         result = {"status": "ok", "details": {}}
 
@@ -81,7 +81,7 @@ class MonitoringUtils:
 
         return result
 
-    def _check_git_repository(self) -> Dict[str, Any]:
+    def _check_git_repository(self) -> dict[str, Any]:
         """Check git repository status."""
         result = {"status": "ok", "details": {}}
 
@@ -99,6 +99,7 @@ class MonitoringUtils:
                 ["git", "diff", "--cached", "--name-only"],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             staged_files = (
                 staged_result.stdout.strip().split("\n")
@@ -116,7 +117,7 @@ class MonitoringUtils:
 
         return result
 
-    def _check_llm_connection(self) -> Dict[str, Any]:
+    def _check_llm_connection(self) -> dict[str, Any]:
         """Check LLM connection."""
         result = {"status": "ok", "details": {}}
 
@@ -129,12 +130,12 @@ class MonitoringUtils:
                 result["details"]["connection"] = "failed"
                 result["status"] = "error"
         except Exception as e:
-            result["details"]["connection"] = f"error: {str(e)}"
+            result["details"]["connection"] = f"error: {e!s}"
             result["status"] = "error"
 
         return result
 
-    def _check_hooks(self) -> Dict[str, Any]:
+    def _check_hooks(self) -> dict[str, Any]:
         """Check git hooks installation."""
         result = {"status": "ok", "details": {}}
 
@@ -152,7 +153,7 @@ class MonitoringUtils:
         return result
 
     def log_review_result(
-        self, result: ReviewResult, metadata: Optional[Dict[str, Any]] = None
+        self, result: ReviewResult, metadata: dict[str, Any] | None = None
     ):
         """Write one line to the log of the day.
 
@@ -203,7 +204,7 @@ class MonitoringUtils:
                         entries.append(entry)
         return entries
 
-    def generate_report(self, days: int = 7) -> Dict[str, Any]:
+    def generate_report(self, days: int = 7) -> dict[str, Any]:
         """Generate monitoring report for specified period."""
         entries = self.read_entries(days)
         report = {
@@ -378,7 +379,7 @@ def main():
         health = monitor.health_check()
 
         print(f"Overall Status: {health['overall_status'].upper()}")
-        print("")
+        print()
 
         for check_name, check_result in health["checks"].items():
             if check_result["status"] == "ok":
@@ -392,7 +393,7 @@ def main():
 
             for detail_name, detail_value in check_result["details"].items():
                 print(f"   • {detail_name}: {detail_value}")
-            print("")
+            print()
 
     elif args.command == "report":
         report = monitor.generate_report(args.days)

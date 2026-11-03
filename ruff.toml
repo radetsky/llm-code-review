@@ -1,2 +1,15 @@
 # Sample code in the golden cases has deliberate problems. Do not lint or format it.
 extend-exclude = ["evaluation/cases"]
+
+[lint]
+# Broad catches keep the advisory review alive. Timestamps are local on purpose.
+# Class-level tables in the analyzers are read only.
+ignore = ["BLE001", "DTZ005", "RUF012"]
+
+[lint.per-file-ignores]
+# Tests import fixtures by name. Pytest uses the argument as the fixture.
+"test_*.py" = ["F811"]
+
+[format]
+# Markdown files are not Python code.
+exclude = ["*.md"]

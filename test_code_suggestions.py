@@ -2,8 +2,8 @@
 
 import pytest
 
-from review_core import CodeSuggestion, LLMReviewer, ReviewResult
 from config import ReviewConfig
+from review_core import CodeSuggestion, LLMReviewer, ReviewResult
 
 
 @pytest.fixture
