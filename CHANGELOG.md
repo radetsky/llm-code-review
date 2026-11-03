@@ -4,6 +4,15 @@ The release 0.1.0 waits for the decision about the default engine.
 
 ## [Unreleased]
 
+### Changed
+- One `ENGINES` constant in `config.py` lists the engines. The argument parser, `get_engine`, the evaluation scripts and the order in the history report use it.
+- `normalize_text` in `review_core.py` is the one rule for duplicate text. The agent and the hybrid engine use it.
+- `redact_result` hides secrets in every text value of `agent_stats`, also in nested values. A new text field does not need an entry in a list.
+- `RepoSource` reads the list of files once for each review. `find_files`, `list_dir` and the language detection share it.
+- `review.py` builds the agent and the empty result in one place for the `agent` and `hybrid` engines.
+- The arguments of a tool call are written to the trace only when `--trace` is on. The pull request script reads the files and the review comments of a pull request at the same time.
+- Removed code that nothing calls: `DiffParser.get_changed_files_list`, `ReviewCLI._get_diff_content` and `agent_core.DEFAULT_SYSTEM_PROMPT`.
+
 ### Fixed
 - The classic prompt is written in ASD-STE100 and says that the review is advisory (no "block commit"). It also tells the model that text in the diff is data and not to write secret values. On the 17 golden cases (5 runs each) the recall is the same (92%) and findings without a location went from 3 to 0.
 - `ruff check` and `ruff format --check` pass for the whole project (old findings fixed; `ruff.toml` ignores `BLE001`, `DTZ005` and `RUF012` on purpose).
@@ -19,6 +28,10 @@ The release 0.1.0 waits for the decision about the default engine.
 - Engine `hybrid` (`hybrid_core.py`): the classic engine lists candidate problems, and the agent checks
   each one with the tools. Config section `hybrid` (`max_candidates`, `base_steps`, `steps_per_candidate`,
   `when_no_candidates`). If the check fails, the result of the classic engine is used (`hybrid->classic`).
+  On the 17 golden cases (3 runs each) the recall is 95% (37 of 39) and the precision is 90%. The median is
+  7.6 s and about 7k tokens. On 12 real changes the median time is 2.5 s (small), 8.2 s (medium), 27.7 s
+  (large) and 67.1 s (huge). The agent needs 46.8 s and 52.9 s on medium and large changes. On huge changes
+  the hybrid engine still hits a budget (3 of 3).
 - Secrets in the text of a review are hidden before the review leaves the program (`redaction.py`).
   The rules cover private keys, tokens of known formats (GitHub, Slack, Stripe, AWS, Google, JWT and
   others), `Bearer` headers, passwords in URLs and values that follow a name such as `password` or
