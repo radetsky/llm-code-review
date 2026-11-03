@@ -101,7 +101,8 @@ results are still in `agent_tools.py` and `agent_core.py`.
 `redaction.py` hides secrets in the text of a review. `review.py` calls `redact_result` for every
 engine before it prints, logs or posts the result. Do not output review text before that call.
 
-Engines: `classic` (single prompt, default) and `agent` (tool-calling loop).
+Engines: `classic` (single prompt, default), `agent` (tool-calling loop) and `hybrid`
+(`hybrid_core.py`: classic proposes candidates, the agent verifies them).
 Degradation: agent -> classic (same model) -> static analysis.
 
 ## GitHub Action

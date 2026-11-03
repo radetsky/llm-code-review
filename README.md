@@ -241,6 +241,7 @@ Two engines review a change.
 | Engine | How it works | Use it when |
 |--------|--------------|-------------|
 | `classic` (default) | Sends the diff in one prompt | The change is small and you want the lowest cost and time |
+| `hybrid` | The classic engine lists candidate problems. The agent checks each candidate with the tools and keeps the confirmed ones | You want fewer false alarms at a cost that depends on the number of candidates (`hybrid.*` in the config) |
 | `agent` | The model reads files, searches the code and checks the history with tools, then sends its findings | A problem can depend on code outside the diff, or you want fewer false alarms |
 
 Choose the engine with `--engine agent`, with `LLM_ENGINE=agent`, or with `"agent": {"enabled": true}`
@@ -494,7 +495,7 @@ engine and then to static analysis. To run both engines on one pull request, use
 | `api_key` | LLM API key. If empty, the review is skipped | No | - |
 | `base_url` | API endpoint URL | No | config |
 | `model` | Model name | No | config |
-| `engine` | `classic` or `agent` | No | `classic` |
+| `engine` | `classic`, `agent` or `hybrid` | No | `classic` |
 | `thinking` | Agent: `default`, `on` or `off` (the thinking mode of the model) | No | config (`agent.thinking`) |
 | `max_steps` | Agent: maximum number of steps | No | config (`agent.max_steps`) |
 | `wall_timeout` | Agent: time limit in seconds | No | config (`agent.wall_timeout_sec`) |
@@ -517,7 +518,7 @@ The inputs `strict` and `fail_on_critical` do not exist any more. The action nev
 | `critical_count` | Number of critical issues |
 | `warning_count` | Number of warnings |
 | `suggestion_count` | Number of suggestions |
-| `engine` | Engine that made the result: `classic`, `agent` or `agent->classic` |
+| `engine` | Engine that made the result: `classic`, `agent`, `hybrid`, `hybrid->classic` or `agent->classic` |
 | `result_file` | Path to the JSON result file |
 
 See the `examples/` folder for more workflow examples.

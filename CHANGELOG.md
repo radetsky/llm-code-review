@@ -5,6 +5,9 @@ The release 0.1.0 waits for the decision about the default engine.
 ## [Unreleased]
 
 ### Added
+- Engine `hybrid` (`hybrid_core.py`): the classic engine lists candidate problems, and the agent checks
+  each one with the tools. Config section `hybrid` (`max_candidates`, `base_steps`, `steps_per_candidate`,
+  `when_no_candidates`). If the check fails, the result of the classic engine is used (`hybrid->classic`).
 - Secrets in the text of a review are hidden before the review leaves the program (`redaction.py`).
   The rules cover private keys, tokens of known formats (GitHub, Slack, Stripe, AWS, Google, JWT and
   others), `Bearer` headers, passwords in URLs and values that follow a name such as `password` or
