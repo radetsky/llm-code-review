@@ -305,7 +305,7 @@ class AgentReviewer:
         # The step cap is close to the step target. A change that needs more
         # steps can still use max_steps, but only through a larger steps_over_target.
         max_steps = min(
-            max_steps, step_target + int(cfg.get("agent.steps_over_target", 4))
+            max_steps, step_target + int(cfg.get("agent.steps_over_target", 100))
         )
         stats["step_target"] = step_target
         stats["step_cap"] = max_steps

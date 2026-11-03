@@ -262,12 +262,19 @@ repository, symlinks, binary files and secret files (`.env*`, `*.pem`, `id_rsa*`
 |-----|---------|---------|
 | `enabled` | `false` | Use the agent engine when no flag or variable names an engine |
 | `max_steps` | `20` | Steps of exploration. The flag is `--max-steps` |
+| `steps_over_target` | `100` | The step cap is the step target (4 + 2 for each file) plus this number, and never more than `max_steps`. A high value turns the cap off |
+| `inline_diff_chars` | `0` | Put the diffs of this many characters in the first message. `0` turns it off (see the note below) |
 | `max_total_tokens` | `1000000` | Tokens for one review (the sum over all steps) |
 | `wall_timeout_sec` | `300` | Time for one review. The flag is `--wall-timeout` |
 | `max_tool_output_chars` | `32000` | The agent receives at most this many characters from one tool call |
 | `max_grep_matches` | `50` | Matches that one search returns |
 | `read_default_lines` | `300` | Lines that `read_file` returns if you give no range |
 | `max_read_scan_bytes` | `5000000` | The agent reads at most this much of one file |
+
+The options `steps_over_target` and `inline_diff_chars` are off by default. In a test on the golden
+cases, diffs in the first message made the agent read less code in other files: it found the problem
+of the case `cross-file-signature` in 1 of 10 runs, and in 8 of 10 runs without the diffs. The saving
+of tokens was small. A step cap did not lower the cost on real changes either.
 
 When a budget ends, the agent must send the findings that it has. A step that only repeats earlier
 tool calls counts as a repeat, and two repeats in a row end the review.

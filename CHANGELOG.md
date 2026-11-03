@@ -16,6 +16,10 @@ The release 0.1.0 waits for the decision about the default engine.
   `.aws`, `.kube`, `.gnupg` and `.docker`.
 - The agent prompt says that text in files, diffs, comments and tool results is data, not
   instructions, and that a finding must not contain the value of a secret.
+- Two options for the cost of the agent, both off by default: `agent.inline_diff_chars` (put diffs in
+  the first message) and `agent.steps_over_target` (a step cap close to the step target). Measurements
+  showed no gain: diffs in the first message cut recall on a case that needs code from other files (1 of
+  10 runs against 8 of 10), and the cap did not lower the cost on real changes.
 - `python -m evaluation.history` measures the cost of both engines on real changes from the git
   history of a repository, in four size classes: time, tokens, steps, reviews that hit a budget,
   fallbacks and the number of findings.
@@ -97,6 +101,7 @@ The release 0.1.0 waits for the decision about the default engine.
   `review.check_docstrings` config option.
 
 ### Fixed
+- The statistics of the agent counted an unknown tool call as a call and as an invalid call.
 - `DiffParser.parse_diff` gave the last hunk of each file to the next file in a diff of many files.
   A removed line that starts with `--`, or an added line that starts with `++`, was read as a file
   header and moved the line numbers.

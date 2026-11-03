@@ -268,6 +268,7 @@ class TestTaskMessage:
     def test_a_small_diff_is_in_the_message(self, tools):  # noqa: F811
         from agent_prompt import build_task_message
 
+        tools.config.config["agent"]["inline_diff_chars"] = 24000
         text = build_task_message(tools.config, tools)
         assert "app.py (modified)" in text  # The list of changed files
         assert (
@@ -281,14 +282,15 @@ class TestTaskMessage:
     def test_get_diff_for_a_shown_file_is_not_repeated(self, tools):  # noqa: F811
         from agent_prompt import build_task_message
 
+        tools.config.config["agent"]["inline_diff_chars"] = 24000
         build_task_message(tools.config, tools)
         out = tools.call("get_diff", {"path": "app.py"})
         assert out.startswith("You already got this result")
 
-    def test_the_switch_off_value_keeps_the_old_behavior(self, tools):  # noqa: F811
+    def test_the_option_is_off_by_default(self, tools):  # noqa: F811
         from agent_prompt import build_task_message
 
-        tools.config.config["agent"]["inline_diff_chars"] = 0
+        assert tools.config.get("agent.inline_diff_chars") == 0
         text = build_task_message(tools.config, tools)
         assert "File: app.py" not in text and "+ 2:" not in text
         assert (
@@ -320,6 +322,7 @@ class TestTaskMessage:
         from agent_prompt import build_task_message
 
         multi = make_tools(tmp_path, monkeypatch, {"a.py": 5, "b.py": 5})
+        multi.config.config["agent"]["inline_diff_chars"] = 24000
         text = build_task_message(multi.config, multi)
         assert "File: a.py" in text and "File: b.py" in text and "not shown" not in text
 
@@ -335,6 +338,7 @@ class TestTaskMessage:
         assert text.count("File: ") == 1  # The second diff does not fit in the rest.
 
     def test_the_first_request_has_the_diff(self, tools):  # noqa: F811
+        tools.config.config["agent"]["inline_diff_chars"] = 24000
         _, client = run(tools, [submit([])])
         first = client.requests[0]["messages"][1]["content"]
         assert "File: app.py (modified)" in first and "+ 2:     return 2" in first

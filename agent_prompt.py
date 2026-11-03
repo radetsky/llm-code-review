@@ -101,7 +101,7 @@ def build_task_message(config, tools) -> str:
     The model reads the other diffs with get_diff. A diff in the message counts as
     given, so a get_diff call for it gets a short note.
     """
-    left = int(config.get("agent.inline_diff_chars", 24000))
+    left = int(config.get("agent.inline_diff_chars", 0))
     shown, missing = [], []
     for item in tools.parsed_files:
         text = tools.parser.format_for_llm([item]).strip()

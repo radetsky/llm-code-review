@@ -690,7 +690,7 @@ class TestTrace:
             trace=True,
         )
         err = capsys.readouterr().err
-        assert "[TRACE] step 1/10 [1/1]: read_file" in err
+        assert "[TRACE] step 1/20 [1/1]: read_file" in err
         assert '"path": "app.py"' in err
         assert "submit_review accepted" in err
         assert "LLM REQUEST" not in err
@@ -738,7 +738,7 @@ class TestTrace:
 
 class TestStepCap:
     def cap(self, tools, **agent):
-        tools.config.config["agent"].update(agent)
+        tools.config.config["agent"].update({"steps_over_target": 4, **agent})
         result, _ = run(tools, [submit([])])
         return result.agent_stats["step_target"], result.agent_stats["step_cap"]
 
@@ -758,6 +758,7 @@ class TestStepCap:
         assert self.cap(tools) == (18, 20)
 
     def test_a_model_that_does_not_stop_is_cut_at_the_cap(self, tools):
+        tools.config.config["agent"]["steps_over_target"] = 4
         script = [
             reply(calls=[tool_call("grep", {"pattern": f"p{i}"}, f"c{i}")])
             for i in range(10)
@@ -766,3 +767,7 @@ class TestStepCap:
         assert result.agent_stats["forced_submit"] == "max_steps"
         assert result.agent_stats["steps"] == 10 and len(client.requests) == 11
         assert "(max_steps)" in client.requests[-1]["messages"][-1]["content"]
+
+    def test_the_cap_is_off_by_default(self, tools):
+        result, _ = run(tools, [submit([])])
+        assert result.agent_stats["step_cap"] == 20  # The value of max_steps.

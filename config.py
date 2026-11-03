@@ -84,8 +84,8 @@ class ReviewConfig:
             "read_default_lines": 300,
             "max_read_scan_bytes": 5000000,
             "max_steps": 20,
-            "steps_over_target": 4,  # The step cap is the step target plus this number
-            "inline_diff_chars": 24000,  # Diff text in the first message (0 turns it off)
+            "steps_over_target": 100,  # The step cap is the step target plus this number. A high value turns the cap off.
+            "inline_diff_chars": 0,  # Diff text in the first message. 0 turns it off.
             "max_total_tokens": 1000000,
             "wall_timeout_sec": 300,
         },
