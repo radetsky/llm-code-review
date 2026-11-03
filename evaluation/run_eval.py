@@ -18,6 +18,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from config import ENGINES
 from evaluation.cases import BASE_BRANCH, HEAD_BRANCH, build_repo, load_cases
 from evaluation.report import render
 from evaluation.scoring import parse_findings, score_run
@@ -150,7 +151,7 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
 
     engines = [e.strip() for e in args.engines.split(",") if e.strip()]
     for engine in engines:
-        if engine not in ("classic", "agent", "hybrid"):
+        if engine not in ENGINES:
             parser.error(f"unknown engine '{engine}'")
     if args.runs < 1:
         parser.error("--runs must be 1 or more")

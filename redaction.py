@@ -97,6 +97,18 @@ def redact_list(items: list) -> tuple[list, int]:
     return result, total
 
 
+def _redact_strings(data: dict) -> int:
+    """Hide secrets in every string value of a nested dict. Return the count."""
+    total = 0
+    for key, value in data.items():
+        if isinstance(value, str):
+            data[key], n = redact(value)
+            total += n
+        elif isinstance(value, dict):
+            total += _redact_strings(value)
+    return total
+
+
 def redact_result(result) -> int:
     """Hide secrets in a ReviewResult. Return the number of replacements.
 
@@ -112,16 +124,8 @@ def redact_result(result) -> int:
         total += n
         suggestion.suggested_code, n = redact(suggestion.suggested_code, generic=False)
         total += n
-    stats = result.agent_stats
-    if isinstance(stats, dict):
-        for key in ("fallback_reason", "stop_reason"):
-            if isinstance(stats.get(key), str):
-                stats[key], n = redact(stats[key])
-                total += n
-        nested = stats.get("hybrid")
-        if isinstance(nested, dict) and isinstance(nested.get("fallback_reason"), str):
-            nested["fallback_reason"], n = redact(nested["fallback_reason"])
-            total += n
+    if isinstance(result.agent_stats, dict):
+        total += _redact_strings(result.agent_stats)
     if isinstance(result.raw_response, str):
         result.raw_response, n = redact(result.raw_response)
         total += n

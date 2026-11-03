@@ -254,20 +254,6 @@ class DiffParser:
 
         return "\n".join(formatted_sections)
 
-    def get_changed_files_list(self, mode: str = "staged") -> list[str]:
-        """Get list of changed files."""
-        if mode == "staged":
-            result = self._run_git(["diff", "--cached", "--name-only"])
-        elif mode == "unstaged":
-            result = self._run_git(["diff", "--name-only"])
-        elif mode == "all":
-            result = self._run_git(["diff", "HEAD", "--name-only"])
-        else:
-            raise ValueError(f"Unsupported mode: {mode}")
-
-        files = [f.strip() for f in result.split("\n") if f.strip()]
-        return [f for f in files if self.config.is_file_supported(f)]
-
 
 # Files the agent must never read, even if they are tracked by git.
 DENY_PATTERNS = (
@@ -374,6 +360,7 @@ class RepoSource:
         self.rev = rev
         self.deny_patterns = deny_patterns
         self.git_timeout = git_timeout
+        self._names: list[str] | None = None
         top = self._git(["rev-parse", "--show-toplevel"], root or ".").strip()
         self.root = os.path.realpath(top)
 
@@ -604,21 +591,33 @@ class RepoSource:
             total=scanned if complete else None,
         )
 
+    def _file_names(self) -> list[str]:
+        """Return the paths of all files, without the denied ones.
+
+        The list is read once for each RepoSource. The tree does not change
+        during one review.
+        """
+        if self._names is None:
+            if self.mode == "worktree":
+                args = ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]
+            elif self.mode == "index":
+                args = ["ls-files", "-z"]
+            else:
+                args = ["ls-tree", "-r", "--name-only", "-z", self.rev]
+            self._names = [
+                n for n in self._run(args).split("\x00") if n and not self._is_denied(n)
+            ]
+        return self._names
+
     def list_dir(self, path: str = "") -> list[str]:
         """List tracked entries directly under a directory (dirs end with '/')."""
         rel = self._normalize(path)
-        if self.mode == "worktree":
-            args = ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]
-        elif self.mode == "index":
-            args = ["ls-files", "-z"]
-        else:
-            args = ["ls-tree", "-r", "--name-only", "-z", self.rev]
-        names = [n for n in self._run(args).split("\x00") if n]
+        names = self._file_names()
 
         prefix = f"{rel}/" if rel else ""
         entries = set()
         for name in names:
-            if not name.startswith(prefix) or self._is_denied(name):
+            if not name.startswith(prefix):
                 continue
             head, sep, _ = name[len(prefix) :].partition("/")
             entries.add(prefix + head + ("/" if sep else ""))
@@ -626,21 +625,12 @@ class RepoSource:
 
     def find_files(self, pattern: str, max_results: int = 200) -> list[str]:
         """Find files whose path matches a glob pattern (fnmatch)."""
-        if self.mode == "worktree":
-            args = ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]
-        elif self.mode == "index":
-            args = ["ls-files", "-z"]
-        else:
-            args = ["ls-tree", "-r", "--name-only", "-z", self.rev]
-        names = [n for n in self._run(args).split("\x00") if n]
+        names = self._file_names()
         matches = [
             n
             for n in names
-            if not self._is_denied(n)
-            and (
-                fnmatch.fnmatch(n, pattern)
-                or fnmatch.fnmatch(posixpath.basename(n), pattern)
-            )
+            if fnmatch.fnmatch(n, pattern)
+            or fnmatch.fnmatch(posixpath.basename(n), pattern)
         ]
         return sorted(matches)[:max_results]
 

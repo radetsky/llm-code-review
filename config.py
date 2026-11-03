@@ -12,6 +12,9 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+ENGINES = ("classic", "agent", "hybrid")  # Review engines, in display order.
+
+
 class ReviewConfig:
     """Manages configuration for LLM code review."""
 
@@ -292,7 +295,7 @@ class ReviewConfig:
         if not value:
             value = "agent" if self.get("agent.enabled", False) else "classic"
         value = str(value).strip().lower()
-        if value not in ("agent", "classic", "hybrid"):
+        if value not in ENGINES:
             raise ValueError(
                 f"Unsupported engine '{value}'. Use 'agent', 'classic' or 'hybrid'."
             )

@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import ReviewConfig
+from config import ENGINES, ReviewConfig
 from diff_parser import DiffParser
 from evaluation.run_eval import RESULTS_DIR, ROOT, run_review
 from monitor import percentile
@@ -301,9 +301,7 @@ def summarize(records: list[dict]) -> dict:
 
 def render(records: list[dict], meta: dict) -> str:
     """Return the report as Markdown."""
-    engines = sorted(
-        {r["engine"] for r in records}, key=["classic", "hybrid", "agent"].index
-    )
+    engines = sorted({r["engine"] for r in records}, key=ENGINES.index)
     samples = []
     for r in records:
         key = (r["bucket"], r["base"], r["head"])
@@ -457,7 +455,7 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
 
     engines = [e.strip() for e in args.engines.split(",") if e.strip()]
     for engine in engines:
-        if engine not in ("classic", "agent", "hybrid"):
+        if engine not in ENGINES:
             parser.error(f"unknown engine '{engine}'")
     if args.per_bucket < 1:
         parser.error("--per-bucket must be 1 or more")

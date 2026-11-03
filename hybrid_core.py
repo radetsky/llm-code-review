@@ -8,18 +8,13 @@ of candidates, not by the size of the change.
 """
 
 import logging
-import re
 
 from agent_core import AgentReviewer
 from agent_tools import AgentTools
 from prompts import load_prompt, render
-from review_core import ReviewResult
+from review_core import ReviewResult, normalize_text
 
 logger = logging.getLogger(__name__)
-
-
-def _key(text: str) -> str:
-    return re.sub(r"\s+", " ", text.lower()).strip()
 
 
 # Notices of the classic engine. They tell how the review ran. They are not findings.
@@ -51,7 +46,7 @@ def collect_candidates(
         ("warning", result.warnings),
     ):
         for text in texts:
-            key = _key(text)
+            key = normalize_text(text)
             if key and key not in seen and not is_notice(text):
                 seen.add(key)
                 items.append((severity, text))
@@ -64,11 +59,11 @@ def render_candidates(items: list[tuple[str, str]]) -> str:
 
 
 def _merge_unique(first: list[str], second: list[str]) -> list[str]:
-    seen = {_key(t) for t in first}
+    seen = {normalize_text(t) for t in first}
     merged = list(first)
     for text in second:
-        if _key(text) not in seen:
-            seen.add(_key(text))
+        if normalize_text(text) not in seen:
+            seen.add(normalize_text(text))
             merged.append(text)
     return merged
 

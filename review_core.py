@@ -54,6 +54,11 @@ class ReviewResult:
         return "success"
 
 
+def normalize_text(text: str) -> str:
+    """Return the text in lower case with single spaces. Used to find duplicates."""
+    return " ".join(text.lower().split())
+
+
 class LLMReviewer:
     """Handles LLM interactions for code review."""
 

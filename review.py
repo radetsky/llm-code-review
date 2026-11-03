@@ -14,7 +14,7 @@ from typing import Any
 
 from agent_core import AgentReviewer
 from agent_tools import AgentTools
-from config import ReviewConfig
+from config import ENGINES, ReviewConfig
 from diff_parser import DiffParser, RepoSource
 from hybrid_core import HybridReviewer
 from redaction import redact, redact_result
@@ -229,7 +229,7 @@ Examples:
         )
         parser.add_argument(
             "--engine",
-            choices=["agent", "classic", "hybrid"],
+            choices=list(ENGINES),
             help="Review engine (default: LLM_ENGINE, then agent.enabled, then classic)",
         )
         parser.add_argument(
@@ -384,9 +384,19 @@ Examples:
 
         return parsed_files, formatted_diff
 
-    def _get_diff_content(self, args) -> str:
-        """Get formatted diff content based on arguments."""
-        return self._load_diff(args)[1]
+    @staticmethod
+    def _empty_result() -> ReviewResult:
+        return ReviewResult(
+            status="success", critical_issues=[], warnings=[], suggestions=[]
+        )
+
+    def _make_agent(self) -> AgentReviewer:
+        return AgentReviewer(
+            self.config,
+            trace=self.trace,
+            trace_llm=self.trace_llm,
+            thinking=self.thinking,
+        )
 
     def _make_tools(self, args, parsed_files) -> AgentTools:
         if args.base and args.head:
@@ -399,16 +409,8 @@ Examples:
         """Classic proposes candidates; the agent verifies them."""
         self.engine_used = "hybrid"
         if not parsed_files:
-            return ReviewResult(
-                status="success", critical_issues=[], warnings=[], suggestions=[]
-            )
-        agent = AgentReviewer(
-            self.config,
-            trace=self.trace,
-            trace_llm=self.trace_llm,
-            thinking=self.thinking,
-        )
-        hybrid = HybridReviewer(self.config, self.reviewer, agent)
+            return self._empty_result()
+        hybrid = HybridReviewer(self.config, self.reviewer, self._make_agent())
         result = hybrid.review(diff_content, self._make_tools(args, parsed_files))
         self.engine_used = hybrid.outcome
         return result
@@ -421,18 +423,10 @@ Examples:
         """
         self.engine_used = "agent"
         if not parsed_files:
-            return ReviewResult(
-                status="success", critical_issues=[], warnings=[], suggestions=[]
-            )
+            return self._empty_result()
 
         tools = self._make_tools(args, parsed_files)
-        agent = AgentReviewer(
-            self.config,
-            trace=self.trace,
-            trace_llm=self.trace_llm,
-            thinking=self.thinking,
-        )
-        result = agent.review(tools)
+        result = self._make_agent().review(tools)
         if result.status == "success":
             return result
 

@@ -25,7 +25,7 @@ from openai import OpenAI, OpenAIError
 from agent_prompt import build_system_prompt, build_task_message
 from agent_tools import DUPLICATE_PREFIX, AgentTools
 from prompts import load_prompt, render
-from review_core import CodeSuggestion, ReviewResult
+from review_core import CodeSuggestion, ReviewResult, normalize_text
 
 SUBMIT_TOOL = "submit_review"
 MAX_NUDGES = 2
@@ -87,8 +87,6 @@ SUBMIT_SPEC = {
         },
     },
 }
-
-DEFAULT_SYSTEM_PROMPT = load_prompt("agent_system")
 
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 FENCE_RE = re.compile(r"^```[A-Za-z0-9_+-]*\s*\n(.*?)\n?```\s*$", re.DOTALL)
@@ -281,7 +279,6 @@ class AgentReviewer:
             kwargs["extra_body"] = extra
 
         retries = int(self.config.get("llm.max_retries", 3))
-        kwargs["timeout"] = max(deadline - time.monotonic(), MIN_REQUEST_TIMEOUT)
         self._trace_request(kwargs, messages)
         for attempt in range(retries + 1):
             kwargs["timeout"] = max(deadline - time.monotonic(), MIN_REQUEST_TIMEOUT)
@@ -457,21 +454,21 @@ class AgentReviewer:
                         else:
                             stats["tool_calls"] += 1
 
-                    shown = (
-                        json.dumps(args, ensure_ascii=False)
-                        if args is not None
-                        else raw
-                    )
-                    self._trace(
-                        f"step {stats['steps']}/{max_steps} [{index}/{len(batch)}]: "
-                        f"{name}({shown}) -> {len(output)} chars | "
-                        f"tokens used: {stats['tokens']}"
-                    )
+                    if self.trace:
+                        shown = (
+                            json.dumps(args, ensure_ascii=False)
+                            if args is not None
+                            else raw
+                        )
+                        self._trace(
+                            f"step {stats['steps']}/{max_steps} [{index}/{len(batch)}]: "
+                            f"{name}({shown}) -> {len(output)} chars | "
+                            f"tokens used: {stats['tokens']}"
+                        )
                     outputs.append(output)
-                    if output.startswith(DUPLICATE_PREFIX):
-                        stats["duplicate_tool_calls"] += 1
 
                 repeats = sum(o.startswith(DUPLICATE_PREFIX) for o in outputs)
+                stats["duplicate_tool_calls"] += repeats
                 is_stale = repeats * 2 > len(outputs)  # More than half are repeats.
                 stale_steps = stale_steps + 1 if is_stale else 0
                 if ignored:
@@ -607,7 +604,7 @@ class AgentReviewer:
                 self._trace(f"Dropped finding not anchored in the diff: {item!r}")
                 continue
             severity, path, line, line_end, message, code = parsed
-            key = (path, line, " ".join(message.lower().split()))
+            key = (path, line, normalize_text(message))
             if key in seen:
                 stats["dropped_findings"] += 1
                 continue

@@ -274,11 +274,13 @@ async function postInlineReview({ github, context, core, env }) {
   const { owner, repo } = context.repo;
   const pull_number = context.issue.number;
   try {
-    const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number, per_page: 100 });
+    const [files, old] = await Promise.all([
+      github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number, per_page: 100 }),
+      github.paginate(github.rest.pulls.listReviewComments, { owner, repo, pull_number, per_page: 100 }),
+    ]);
     const patches = new Map(files.map((f) => [f.filename, f.patch]));
     const { inline, skipped } = selectInline(comments, patches);
 
-    const old = await github.paginate(github.rest.pulls.listReviewComments, { owner, repo, pull_number, per_page: 100 });
     const known = new Set(old.map((c) => `${c.path}:${c.line}:${c.body}`));
     const fresh = inline.filter((c) => !known.has(`${c.path}:${c.line}:${c.body}`)).slice(0, MAX_INLINE_COMMENTS);
 
