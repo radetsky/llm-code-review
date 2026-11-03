@@ -301,7 +301,9 @@ def summarize(records: list[dict]) -> dict:
 
 def render(records: list[dict], meta: dict) -> str:
     """Return the report as Markdown."""
-    engines = sorted({r["engine"] for r in records}, key=["classic", "agent"].index)
+    engines = sorted(
+        {r["engine"] for r in records}, key=["classic", "hybrid", "agent"].index
+    )
     samples = []
     for r in records:
         key = (r["bucket"], r["base"], r["head"])
@@ -427,7 +429,9 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
         "--repo", default=".", help="Repository to read (default: the current folder)"
     )
     parser.add_argument(
-        "--engines", default="classic,agent", help="Comma-separated: classic, agent"
+        "--engines",
+        default="classic,agent",
+        help="Comma-separated: classic, agent, hybrid",
     )
     parser.add_argument(
         "--per-bucket", type=int, default=3, help="Changes for each size class"
@@ -453,7 +457,7 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
 
     engines = [e.strip() for e in args.engines.split(",") if e.strip()]
     for engine in engines:
-        if engine not in ("classic", "agent"):
+        if engine not in ("classic", "agent", "hybrid"):
             parser.error(f"unknown engine '{engine}'")
     if args.per_bucket < 1:
         parser.error("--per-bucket must be 1 or more")

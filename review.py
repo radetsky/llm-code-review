@@ -12,6 +12,7 @@ import time
 from typing import Dict, Any
 from pathlib import Path
 from config import ReviewConfig
+from hybrid_core import HybridReviewer
 from agent_core import AgentReviewer
 from agent_tools import AgentTools
 from diff_parser import DiffParser, RepoSource
@@ -161,7 +162,11 @@ class ReviewCLI:
                 result = self._run_offline_review(parsed_args)
             else:
                 parsed_files, diff_content = self._load_diff(parsed_args)
-                if engine == "agent":
+                if engine == "hybrid":
+                    result = self._run_hybrid_review(
+                        parsed_args, parsed_files, diff_content
+                    )
+                elif engine == "agent":
                     result = self._run_agent_review(
                         parsed_args, parsed_files, diff_content
                     )
@@ -223,7 +228,7 @@ Examples:
         )
         parser.add_argument(
             "--engine",
-            choices=["agent", "classic"],
+            choices=["agent", "classic", "hybrid"],
             help="Review engine (default: LLM_ENGINE, then agent.enabled, then classic)",
         )
         parser.add_argument(
@@ -382,6 +387,31 @@ Examples:
         """Get formatted diff content based on arguments."""
         return self._load_diff(args)[1]
 
+    def _make_tools(self, args, parsed_files) -> AgentTools:
+        if args.base and args.head:
+            source = RepoSource.for_diff_mode("range", head=args.head)
+        else:
+            source = RepoSource.for_diff_mode(args.mode or "staged")
+        return AgentTools(self.config, source, self.parser, parsed_files)
+
+    def _run_hybrid_review(self, args, parsed_files, diff_content) -> ReviewResult:
+        """Classic proposes candidates; the agent verifies them."""
+        self.engine_used = "hybrid"
+        if not parsed_files:
+            return ReviewResult(
+                status="success", critical_issues=[], warnings=[], suggestions=[]
+            )
+        agent = AgentReviewer(
+            self.config,
+            trace=self.trace,
+            trace_llm=self.trace_llm,
+            thinking=self.thinking,
+        )
+        hybrid = HybridReviewer(self.config, self.reviewer, agent)
+        result = hybrid.review(diff_content, self._make_tools(args, parsed_files))
+        self.engine_used = hybrid.outcome
+        return result
+
     def _run_agent_review(self, args, parsed_files, diff_content) -> ReviewResult:
         """Run the agent engine; degrade to the classic engine on failure.
 
@@ -394,11 +424,7 @@ Examples:
                 status="success", critical_issues=[], warnings=[], suggestions=[]
             )
 
-        if args.base and args.head:
-            source = RepoSource.for_diff_mode("range", head=args.head)
-        else:
-            source = RepoSource.for_diff_mode(args.mode or "staged")
-        tools = AgentTools(self.config, source, self.parser, parsed_files)
+        tools = self._make_tools(args, parsed_files)
         agent = AgentReviewer(
             self.config,
             trace=self.trace,

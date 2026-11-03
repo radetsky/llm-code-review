@@ -91,6 +91,12 @@ class ReviewConfig:
             "max_total_tokens": 1000000,
             "wall_timeout_sec": 300,
         },
+        "hybrid": {
+            "max_candidates": 10,
+            "base_steps": 3,
+            "steps_per_candidate": 2,
+            "when_no_candidates": "accept",
+        },
         "monitoring": {
             "enabled": False,  # True writes one line to a log file for each review
             "log_dir": "logs",
@@ -272,14 +278,16 @@ class ReviewConfig:
     def get_engine(self, cli_value: str | None = None) -> str:
         """Resolve the review engine: CLI flag, then LLM_ENGINE, then config.
 
-        Returns "agent" or "classic". Raises ValueError for anything else.
+        Returns "agent", "classic" or "hybrid". Raises ValueError for anything else.
         """
         value = cli_value or os.getenv("LLM_ENGINE")
         if not value:
             value = "agent" if self.get("agent.enabled", False) else "classic"
         value = str(value).strip().lower()
-        if value not in ("agent", "classic"):
-            raise ValueError(f"Unsupported engine '{value}'. Use 'agent' or 'classic'.")
+        if value not in ("agent", "classic", "hybrid"):
+            raise ValueError(
+                f"Unsupported engine '{value}'. Use 'agent', 'classic' or 'hybrid'."
+            )
         return value
 
     def get_code_suggestions_enabled(self) -> bool:

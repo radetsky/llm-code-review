@@ -308,8 +308,19 @@ class AgentReviewer:
 
     # -- main loop ---------------------------------------------------------
 
-    def review(self, tools: AgentTools) -> ReviewResult:
-        """Run the agent. Never raises for model/transport failures."""
+    def review(
+        self,
+        tools: AgentTools,
+        *,
+        prompt_name: str = "agent_system",
+        first_message: str | None = None,
+        step_target: int | None = None,
+    ) -> ReviewResult:
+        """Run the agent. Never raises for model/transport failures.
+
+        The keyword arguments let another engine reuse the loop with its own
+        system prompt, first message and step target.
+        """
         cfg = self.config
         max_steps = int(cfg.get("agent.max_steps", 20))
         max_tokens = int(cfg.get("agent.max_total_tokens", 1000000))
@@ -332,10 +343,9 @@ class AgentReviewer:
         }
         specs = tools.specs + [SUBMIT_SPEC]
         # The step target grows with the size of the change, but it stays below max_steps.
-        step_target = min(
-            max(max_steps - 2, 1),
-            BASE_STEP_TARGET + STEPS_PER_FILE * len(tools.parsed_files),
-        )
+        if step_target is None:
+            step_target = BASE_STEP_TARGET + STEPS_PER_FILE * len(tools.parsed_files)
+        step_target = min(max(max_steps - 2, 1), step_target)
         # The step cap is close to the step target. A change that needs more
         # steps can still use max_steps, but only through a larger steps_over_target.
         max_steps = min(
@@ -345,11 +355,14 @@ class AgentReviewer:
         stats["step_cap"] = max_steps
         stats["thinking"] = self.thinking_mode()
         system_prompt = build_system_prompt(
-            cfg, tools.parsed_files, tools.source, step_target
+            cfg, tools.parsed_files, tools.source, step_target, prompt_name
         )
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": build_task_message(cfg, tools)},
+            {
+                "role": "user",
+                "content": first_message or build_task_message(cfg, tools),
+            },
         ]
         nudges = 0
         stale_steps = 0

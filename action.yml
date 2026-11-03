@@ -25,7 +25,7 @@ inputs:
     description: 'LLM model name (optional, uses the config default if not set)'
     required: false
   engine:
-    description: 'Review engine: classic (one prompt) or agent (tool-calling loop). Default: classic'
+    description: 'Review engine: classic (one prompt), agent (tool-calling loop) or hybrid (classic proposes, agent verifies). Default: classic'
     required: false
     default: 'classic'
   thinking:
@@ -115,7 +115,7 @@ runs:
 
         engine="$INPUT_ENGINE"
         case "$engine" in
-          classic | agent) ;;
+          classic | agent | hybrid) ;;
           *)
             echo "::warning::The engine is not known. The action uses classic."
             engine="classic"

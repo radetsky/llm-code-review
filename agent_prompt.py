@@ -76,7 +76,9 @@ def render_project_rules(config) -> str:
     return "\n\n".join(blocks)
 
 
-def build_system_prompt(config, parsed_files, source, step_target: int) -> str:
+def build_system_prompt(
+    config, parsed_files, source, step_target: int, prompt_name: str = "agent_system"
+) -> str:
     """Return the system prompt with the language checks and project rules."""
     parts = [
         load_prompt(f"agent_lang_{name}")
@@ -87,7 +89,7 @@ def build_system_prompt(config, parsed_files, source, step_target: int) -> str:
         parts.append(project_rules)
 
     text = render(
-        load_prompt("agent_system"),
+        load_prompt(prompt_name),
         project_context="\n\n".join(parts),
         step_target=step_target,
     )

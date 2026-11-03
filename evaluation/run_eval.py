@@ -127,7 +127,9 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
         description="Evaluate the review engines on golden cases"
     )
     parser.add_argument(
-        "--engines", default="classic,agent", help="Comma-separated: classic, agent"
+        "--engines",
+        default="classic,agent",
+        help="Comma-separated: classic, agent, hybrid",
     )
     parser.add_argument(
         "--runs", type=int, default=1, help="Runs for each case and engine"
@@ -148,7 +150,7 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
 
     engines = [e.strip() for e in args.engines.split(",") if e.strip()]
     for engine in engines:
-        if engine not in ("classic", "agent"):
+        if engine not in ("classic", "agent", "hybrid"):
             parser.error(f"unknown engine '{engine}'")
     if args.runs < 1:
         parser.error("--runs must be 1 or more")

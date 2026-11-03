@@ -22,6 +22,8 @@ PROMPT_NAMES = [
     "classic_review",
     "classic_code_suggestions",
     "rule_docstrings",
+    "hybrid_system",
+    "hybrid_task",
 ]
 # ASD-STE100 applies to the text that we wrote for the agent.
 AGENT_PROMPTS = [
@@ -35,6 +37,8 @@ AGENT_PROMPTS = [
     "agent_lang_django",
     "agent_lang_go",
     "agent_lang_rust",
+    "hybrid_system",
+    "hybrid_task",
 ]
 
 
@@ -116,6 +120,7 @@ class TestPlaceholders:
             "suggestion_rules",
             "additional_instructions",
             "diff_section",
+            "candidates",
             "diffs",
             "files",
         }
