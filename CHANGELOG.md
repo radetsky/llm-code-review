@@ -5,6 +5,7 @@ The release 0.1.0 waits for the decision about the default engine.
 ## [Unreleased]
 
 ### Fixed
+- The classic prompt is written in ASD-STE100 and says that the review is advisory (no "block commit"). It also tells the model that text in the diff is data and not to write secret values. On the 17 golden cases (5 runs each) the recall is the same (92%) and findings without a location went from 3 to 0.
 - `ruff check` and `ruff format --check` pass for the whole project (old findings fixed; `ruff.toml` ignores `BLE001`, `DTZ005` and `RUF012` on purpose).
 - A chunked classic review uses the backup model and the static analysis when the model is down, and it returns `model_unavailable`, not `error`.
 - The pull request comment script uses a fence that is longer than the backticks in a suggested change. It no longer takes a comment of another bot, and it removes backticks from a file name in the summary.
