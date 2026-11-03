@@ -314,3 +314,62 @@ class TestReadLines:
         monkeypatch.setattr(subprocess, "Popen", spy)
         RepoSource(files, "index").read_lines("long.txt", 1, 2, max_scan_bytes=1000)
         assert started and all(p.poll() is not None for p in started)
+
+
+DENIED_NAMES = [
+    "secrets.yml",
+    "config/secrets.json",
+    "terraform.tfstate",
+    "prod.tfvars",
+    "local_settings.py",
+    "app/settings_local.py",
+    "service-account-prod.json",
+    "key.p8",
+    "release.keystore",
+    ".aws/credentials",
+    ".ssh/config",
+    ".kube/config",
+    ".docker/config.json",
+    ".pgpass",
+    ".git-credentials",
+]
+
+
+class TestMoreDeniedFiles:
+    @pytest.fixture
+    def secret_repo(self, tmp_path):
+        root = tmp_path / "r"
+        root.mkdir()
+        _git(str(root), "init", "-q", "-b", "main")
+        for name in [*DENIED_NAMES, "secrets.py", "app/utils.py", ".dockerignore"]:
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("token = 'abcdef0123456789abcdef'\n")
+        _git(str(root), "add", "-f", ".")
+        _git(str(root), "commit", "-q", "-m", "x")
+        return str(root)
+
+    @pytest.mark.parametrize("name", DENIED_NAMES)
+    def test_read_is_refused_in_every_mode(self, secret_repo, name):
+        for src in (
+            RepoSource(secret_repo, "worktree"),
+            RepoSource(secret_repo, "index"),
+            RepoSource(secret_repo, "rev", rev="HEAD"),
+        ):
+            with pytest.raises(RepoAccessError):
+                src.read(name)
+            with pytest.raises(RepoAccessError):
+                src.read_lines(name, 1, 2)
+
+    def test_denied_files_do_not_show_in_lists_or_search(self, secret_repo):
+        src = RepoSource(secret_repo, "worktree")
+        listed = src.find_files("*")
+        for name in DENIED_NAMES:
+            assert name not in listed
+        matches = {m["path"] for m in src.grep("abcdef0123456789")}
+        assert matches == {"secrets.py", "app/utils.py", ".dockerignore"}
+
+    def test_normal_code_files_with_similar_names_stay_readable(self, secret_repo):
+        src = RepoSource(secret_repo, "worktree")
+        for name in ("secrets.py", "app/utils.py", ".dockerignore"):
+            assert "token" in src.read(name)

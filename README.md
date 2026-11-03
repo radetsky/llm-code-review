@@ -280,6 +280,22 @@ placeholders, for example `{step_target}`. The agent prompt gets checks for Djan
 (config `prompt.language_blocks`: `"auto"`, a list such as `["rust"]`, or `[]`) and your project rules
 (`prompt.custom_*`, `prompt.additional_instructions`).
 
+## Security
+
+- **What leaves the program.** The diff and the files that the agent reads go to the LLM endpoint
+  that you configure. The text of the review can go to a public place, for example a pull request
+  comment.
+- **Read-only tools.** The agent cannot write files or run commands. It cannot read paths outside the
+  repository, symlinks, binary files or files that usually hold secrets (key files, `.env*`,
+  `secrets.yml`, `terraform.tfstate`, `.aws/`, `.ssh/` and others).
+- **Hidden secrets.** Before the review is printed, saved or posted, the program replaces values that
+  look like secrets with `[REDACTED]`. The rules are heuristic. They catch known token formats and
+  values after names such as `password` or `api_key`. They do not catch every secret. Keep real
+  secrets out of files that the agent can read.
+- **Text in code is data.** A comment in the code can try to give orders to the model. The prompt
+  tells the model not to follow them. A model can still fail, so do not rely on the prompt alone.
+- **Forks.** The action does not run with the secrets of your repository on a pull request from a fork.
+
 ## Monitoring
 
 Turn on the review log with `"monitoring": {"enabled": true}` in `review_config.json` or with

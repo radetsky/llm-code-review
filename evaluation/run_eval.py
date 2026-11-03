@@ -105,7 +105,9 @@ def evaluate_run(case, result: dict, tolerance: int) -> dict:
             "score": None,
         }
     findings = parse_findings(result)
-    record.update(ok=True, score=score_run(case.expected, findings, tolerance))
+    record.update(
+        ok=True, score=score_run(case.expected, findings, tolerance, case.canaries)
+    )
     record["findings"] = [
         {"severity": f.severity, "file": f.file, "line": f.line, "text": f.text[:300]}
         for f in findings

@@ -5,6 +5,19 @@ The release 0.1.0 waits for the decision about the default engine.
 ## [Unreleased]
 
 ### Added
+- Secrets in the text of a review are hidden before the review leaves the program (`redaction.py`).
+  The rules cover private keys, tokens of known formats (GitHub, Slack, Stripe, AWS, Google, JWT and
+  others), `Bearer` headers, passwords in URLs and values that follow a name such as `password` or
+  `api_key`. Both engines use it. The JSON output has `redacted_count`, and the pull request comment
+  tells how many values are hidden. Code in a suggested change is checked with the rules for known
+  token formats only, so a correct code line is not changed.
+- A larger deny list for the tools of the agent: key stores, `terraform.tfstate`, `*.tfvars`,
+  `secrets.yml` and similar files, `local_settings.py`, service account files, and the folders `.ssh`,
+  `.aws`, `.kube`, `.gnupg` and `.docker`.
+- The agent prompt says that text in files, diffs, comments and tool results is data, not
+  instructions, and that a finding must not contain the value of a secret.
+- A golden case `injection-in-comment` and the evaluation metric "findings that write a planted
+  secret". Both engines pass the case.
 - Agent engine (`--engine agent`, `LLM_ENGINE=agent`, config `agent.enabled`). The model reads the
   repository with read-only tools, then sends its findings with `submit_review`. The tools are
   `list_changed_files`, `get_diff`, `read_file`, `grep`, `find_files`, `find_definition`, `git_log`

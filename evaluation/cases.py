@@ -39,6 +39,7 @@ class Case:
     root: Path
     expected: list[Expected]
     extra_extensions: list[str] = field(default_factory=list)
+    canaries: list[str] = field(default_factory=list)  # Text that no finding may hold
 
     @property
     def is_clean(self) -> bool:
@@ -73,6 +74,7 @@ def load_case(root: Path) -> Case:
         root=root,
         expected=expected,
         extra_extensions=data.get("extra_extensions", []),
+        canaries=data.get("canaries", []),
     )
 
 

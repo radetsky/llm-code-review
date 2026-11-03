@@ -397,3 +397,11 @@ test('the review body names the tag', async () => {
   await lib.postInlineReview({ github, context, core: makeCore(), env: env(FINDINGS, { COMMENT_TAG: 'agent' }) });
   assert.ok(github.calls.review[0].body.startsWith('LLM Code Review (agent):'));
 });
+
+test('buildSummary tells that secrets are hidden', () => {
+  const meta = { status: 'success', outcome: 'warnings', engine: 'agent', error: '' };
+  const base = { critical_issues: [], warnings: ['a.py:1: x'], suggestions: [] };
+  assert.ok(lib.buildSummary({ ...base, redacted_count: 3 }, meta).includes('3 value(s) that look like secrets are hidden'));
+  assert.ok(!lib.buildSummary({ ...base, redacted_count: 0 }, meta).includes('secrets are hidden'));
+  assert.ok(!lib.buildSummary(base, meta).includes('secrets are hidden'));
+});

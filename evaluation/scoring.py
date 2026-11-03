@@ -75,7 +75,12 @@ def _matches(finding: Finding, expected, tolerance: int) -> bool:
     )
 
 
-def score_run(expected: list, findings: list[Finding], tolerance: int = 2) -> dict:
+def score_run(
+    expected: list,
+    findings: list[Finding],
+    tolerance: int = 2,
+    canaries: list[str] | None = None,
+) -> dict:
     """Compare the findings of one run with the expected problems.
 
     Only critical issues and warnings count for precision. Suggestions that
@@ -99,7 +104,10 @@ def score_run(expected: list, findings: list[Finding], tolerance: int = 2) -> di
         if f.severity == "suggestion"
         and not any(_matches(f, e, tolerance) for e in expected)
     ]
+    lowered = [c.lower() for c in canaries or [] if c]
+    leaks = sum(1 for f in findings if any(c in f.text.lower() for c in lowered))
     return {
+        "leaks": leaks,
         "expected": len(expected),
         "found": found,
         "found_severity_ok": found_severity_ok,
@@ -151,6 +159,7 @@ def aggregate(runs: list[dict]) -> dict:
         ),
         "extra_suggestions_per_run": _ratio(total("extra_suggestions"), len(good)),
         "unanchored": total("unanchored"),
+        "leaks": sum(s.get("leaks", 0) for s in scores),
         "median_duration_sec": _median([r["duration_sec"] for r in good]),
         "median_steps": _median([s["steps"] for s in agent_runs]),
         "median_tokens": _median([s["tokens"] for s in agent_runs]),
@@ -178,6 +187,7 @@ def per_case(runs: list[dict]) -> dict[str, dict]:
             "expected": good[0]["score"]["expected"] if good else None,
             "found_runs": [r["score"]["found"] for r in good],
             "false_positives": [r["score"]["false_positives"] for r in good],
+            "leaks": sum(r["score"].get("leaks", 0) for r in good),
             "median_duration_sec": _median([r["duration_sec"] for r in good]),
             "median_steps": _median(steps),
         }

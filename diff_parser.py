@@ -271,19 +271,55 @@ class DiffParser:
 
 # Files the agent must never read, even if they are tracked by git.
 DENY_PATTERNS = (
+    # Environment and key files
     ".env",
     ".env.*",
     "*.pem",
     "*.key",
+    "*.p8",
     "*.p12",
     "*.pfx",
+    "*.jks",
+    "*.keystore",
+    "*.kdbx",
     "id_rsa*",
+    "id_dsa*",
     "id_ed25519*",
     "id_ecdsa*",
+    # Files of tools that hold credentials
     ".netrc",
     ".npmrc",
     ".pypirc",
+    ".pgpass",
+    ".my.cnf",
+    ".htpasswd",
+    ".git-credentials",
+    ".dockercfg",
     "credentials*",
+    "terraform.tfstate*",
+    "*.tfvars",
+    # Files that are often named after what they hold
+    "secrets.json",
+    "secrets.yml",
+    "secrets.yaml",
+    "secrets.toml",
+    "secrets.ini",
+    "secrets.env",
+    "secrets.txt",
+    "secret.json",
+    "secret.yml",
+    "secret.yaml",
+    "*.secrets",
+    "local_settings.py",
+    "settings_local.py",
+    "service-account*.json",
+    "*serviceaccount*.json",
+    # Folders with keys or credentials
+    ".ssh",
+    ".aws",
+    ".gnupg",
+    ".kube",
+    ".docker",
 )
 
 

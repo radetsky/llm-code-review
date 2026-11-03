@@ -527,6 +527,15 @@ class TestReadResult:
         )
         assert out["status"] == "error" and "code 124" in out["error"]
 
+    def test_secrets_in_the_error_line_are_hidden(self, tmp_path):
+        err = tmp_path / "err.txt"
+        err.write_text(
+            "Error: request failed with token=4f9c2a7e61b84d3f9a05c8d17e2b6a43\n"
+        )
+        out = read_result.summarize(str(tmp_path / "no.json"), str(err), "1")
+        assert "4f9c2a7e61b84d3f9a05c8d17e2b6a43" not in out["error"]
+        assert "[REDACTED]" in out["error"]
+
     def test_the_message_is_on_one_line_and_short(self, tmp_path):
         err = tmp_path / "err.txt"
         err.write_text("x" * 1000)

@@ -114,6 +114,9 @@ function buildSummary(result, meta) {
       }
       lines.push('');
     }
+    if (result.redacted_count > 0) {
+      lines.push(`> :lock: *${result.redacted_count} value(s) that look like secrets are hidden in this review.*`, '');
+    }
     if (result.fallback_used) {
       lines.push('> :information_source: *Static analysis was used because the model was not available.*', '');
     }

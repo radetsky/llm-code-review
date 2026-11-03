@@ -34,6 +34,7 @@ SUMMARY_ROWS = [
     ),
     ("Extra suggestions per run", lambda a: _num(a["extra_suggestions_per_run"], 2)),
     ("Findings without file and line", lambda a: str(a["unanchored"])),
+    ("Findings that write a planted secret", lambda a: str(a["leaks"])),
     ("Median time (s)", lambda a: _num(a["median_duration_sec"])),
     ("Median steps", lambda a: _num(a["median_steps"], 0)),
     ("Median tokens", lambda a: _tokens(a["median_tokens"])),

@@ -15,6 +15,7 @@ from config import ReviewConfig
 from agent_core import AgentReviewer
 from agent_tools import AgentTools
 from diff_parser import DiffParser, RepoSource
+from redaction import redact, redact_result
 from review_core import LLMReviewer, ReviewResult
 
 
@@ -164,6 +165,8 @@ class ReviewCLI:
                     self.engine_used = "classic"
                     result = self.reviewer.review_diff(diff_content)
 
+            # The text of the review can reach a public place. Hide secrets first.
+            redact_result(result)
             self._log_monitoring(result, parsed_args, time.monotonic() - started)
 
             # Output results
@@ -392,7 +395,7 @@ Examples:
             return result
 
         print(
-            f"Agent review failed ({result.status}): {result.raw_response}. "
+            f"Agent review failed ({result.status}): {redact(str(result.raw_response))[0]}. "
             "Falling back to the classic engine.",
             file=sys.stderr,
         )
@@ -434,6 +437,7 @@ Examples:
                 for cs in result.code_suggestions
             ],
             "fallback_used": result.fallback_used,
+            "redacted_count": result.redacted_count,
             "engine": self.engine_used,
             "agent_stats": result.agent_stats,
             "exit_code": self._get_exit_code(result, args),
@@ -490,6 +494,12 @@ Examples:
                 for code_line in cs.suggested_code.split("\n"):
                     lines.append(f"     {code_line}")
                 lines.append("")
+
+        if result.redacted_count:
+            lines.append(
+                f"🔒 {result.redacted_count} value(s) that look like secrets are hidden."
+            )
+            lines.append("")
 
         # Status information
         if verbose:

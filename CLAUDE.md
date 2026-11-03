@@ -96,6 +96,9 @@ Edit a file to change the prompt. Keep the placeholders, for example `{step_targ
 Agent prompts follow ASD-STE100. The tool descriptions and the notes in tool
 results are still in `agent_tools.py` and `agent_core.py`.
 
+`redaction.py` hides secrets in the text of a review. `review.py` calls `redact_result` for every
+engine before it prints, logs or posts the result. Do not output review text before that call.
+
 Engines: `classic` (single prompt, default) and `agent` (tool-calling loop).
 Degradation: agent -> classic (same model) -> static analysis.
 

@@ -10,13 +10,24 @@ Usage: read_result.py RESULT_FILE STDERR_FILE EXIT_CODE
 
 import json
 import sys
+from pathlib import Path
+
+# The error line comes from the output of a program. Hide secrets in it.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+try:
+    from redaction import redact
+except ImportError:  # The script still works if the module is not there.
+
+    def redact(text, generic=True):
+        return text, 0
+
 
 MAX_MESSAGE = 300
 
 
 def one_line(text: str) -> str:
     """Return the text on one line and at most MAX_MESSAGE characters."""
-    flat = " ".join(str(text).split())
+    flat = redact(" ".join(str(text).split()))[0]
     return flat[:MAX_MESSAGE]
 
 

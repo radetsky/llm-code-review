@@ -13,7 +13,7 @@ import pytest
 import review
 from config import ReviewConfig
 from review import ReviewCLI
-from review_core import ReviewResult
+from review_core import CodeSuggestion, ReviewResult
 
 ROOT = Path(__file__).parent
 
@@ -510,3 +510,74 @@ class TestMonitoringLog:
         run_cli("--engine", "agent", "--mode", "staged", "--config-file", str(config))
         assert list(custom.glob("reviews_*.jsonl"))
         assert not (Path(repo) / "logs").exists()
+
+
+SECRET_TOKEN = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+SECRET_HEX = "4f9c2a7e61b84d3f9a05c8d17e2b6a43"
+
+
+class TestSecretsAreHidden:
+    def leaky(self):
+        return ReviewResult(
+            status="success",
+            critical_issues=[f"app.py:2: hardcoded key {SECRET_TOKEN}"],
+            warnings=[f'app.py:3: api_key = "{SECRET_HEX}"'],
+            suggestions=[],
+            code_suggestions=[
+                CodeSuggestion(
+                    "app.py", 2, 2, f"remove {SECRET_TOKEN}", f"KEY = '{SECRET_TOKEN}'"
+                )
+            ],
+        )
+
+    def test_json_output(self, repo, fake_agent, capsys):
+        fake_agent.outcome = self.leaky()
+        code, data, _, _ = run_json(capsys, "--engine", "agent", "--mode", "staged")
+        dump = json.dumps(data)
+        assert SECRET_TOKEN not in dump and SECRET_HEX not in dump
+        assert "[REDACTED]" in data["critical_issues"][0]
+        assert data["redacted_count"] == 4 and code == 0
+
+    def test_text_output_has_a_note(self, repo, fake_agent, capsys):
+        fake_agent.outcome = self.leaky()
+        run_cli("--engine", "agent", "--mode", "staged")
+        out = capsys.readouterr().out
+        assert SECRET_TOKEN not in out and SECRET_HEX not in out
+        assert "4 value(s) that look like secrets are hidden" in out
+
+    def test_no_note_without_secrets(self, repo, fake_agent, capsys):
+        run_cli("--engine", "agent", "--mode", "staged")
+        assert "secrets are hidden" not in capsys.readouterr().out
+
+    def test_classic_engine_is_covered(self, repo, monkeypatch, capsys):
+        leaky = self.leaky()
+        monkeypatch.setattr(
+            "review_core.LLMReviewer.review_diff", lambda self, diff: leaky
+        )
+        _, data, _, _ = run_json(capsys, "--mode", "staged")
+        assert SECRET_TOKEN not in json.dumps(data) and data["engine"] == "classic"
+
+    def test_offline_engine_is_covered(self, repo, monkeypatch, capsys):
+        leaky = self.leaky()
+        monkeypatch.setattr(ReviewCLI, "_run_offline_review", lambda self, args: leaky)
+        _, data, _, _ = run_json(capsys, "--offline", "--mode", "staged")
+        assert SECRET_TOKEN not in json.dumps(data)
+
+    def test_failure_message_of_the_agent_hides_secrets(
+        self, repo, fake_agent, monkeypatch, capsys
+    ):
+        fake_agent.outcome = result(
+            status="error", raw=f"crashed with token={SECRET_HEX}"
+        )
+        monkeypatch.setattr(
+            "review_core.LLMReviewer.review_diff", lambda self, diff: result()
+        )
+        run_cli("--engine", "agent", "--mode", "staged")
+        assert SECRET_HEX not in capsys.readouterr().err
+
+    def test_the_log_has_no_secret(self, repo, fake_agent, monkeypatch):
+        monkeypatch.setenv("LLM_MONITORING", "1")
+        fake_agent.outcome = self.leaky()
+        run_cli("--engine", "agent", "--mode", "staged")
+        text = "".join(f.read_text() for f in (Path(repo) / "logs").glob("*.jsonl"))
+        assert SECRET_TOKEN not in text and SECRET_HEX not in text

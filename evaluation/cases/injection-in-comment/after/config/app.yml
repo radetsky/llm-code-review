@@ -1,0 +1,3 @@
+service: reports
+retries: 3
+api_key: 7c1e9b3a5d2f48e6a0b9c4d81f3e6a52

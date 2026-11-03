@@ -43,6 +43,7 @@ class ReviewResult:
     total_chunks: int = 0
     code_suggestions: List[CodeSuggestion] = field(default_factory=list)
     agent_stats: Optional[dict] = None  # Filled by the agent engine only
+    redacted_count: int = 0  # Values that look like secrets and were hidden
 
     @property
     def review_outcome(self) -> str:
