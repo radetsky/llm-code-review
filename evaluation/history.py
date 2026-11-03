@@ -21,7 +21,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from config import ENGINES, ReviewConfig
@@ -490,8 +490,7 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
     out_dir = (
         Path(args.out)
         if args.out
-        else RESULTS_DIR
-        / ("history-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S"))
+        else RESULTS_DIR / ("history-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S"))
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     config_file = write_config(base_config, out_dir / "config.json", out_dir / "logs")
@@ -519,7 +518,7 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
                 )
 
     meta = {
-        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "date": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
         "model": (
             json.loads(base_config.read_text(encoding="utf-8")).get("llm") or {}
         ).get("model", "-"),

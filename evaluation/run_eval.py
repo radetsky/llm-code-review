@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from config import ENGINES
@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
     out_dir = (
         Path(args.out)
         if args.out
-        else RESULTS_DIR / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        else RESULTS_DIR / datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -201,7 +201,7 @@ def main(argv: list[str] | None = None, runner=run_review) -> int:
 
     base = json.loads(base_config.read_text(encoding="utf-8"))
     meta = {
-        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "date": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
         "model": (base.get("llm") or {}).get("model", "-"),
         "cases": len(cases),
         "runs": args.runs,
