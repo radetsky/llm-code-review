@@ -118,6 +118,10 @@ def redact_result(result) -> int:
             if isinstance(stats.get(key), str):
                 stats[key], n = redact(stats[key])
                 total += n
+        nested = stats.get("hybrid")
+        if isinstance(nested, dict) and isinstance(nested.get("fallback_reason"), str):
+            nested["fallback_reason"], n = redact(nested["fallback_reason"])
+            total += n
     if isinstance(result.raw_response, str):
         result.raw_response, n = redact(result.raw_response)
         total += n

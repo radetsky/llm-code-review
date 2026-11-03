@@ -3,6 +3,8 @@
 import os
 import subprocess
 
+from pathlib import Path
+
 import pytest
 
 from agent_tools import TOOL_SPECS, AgentTools
@@ -99,6 +101,19 @@ class TestChangedFilesAndDiff:
         assert "File: app.py (modified)" in out
         assert "- 2:     return 1" in out
         assert "+ 2:     return 2" in out
+
+    def test_get_diff_refuses_denied_file(self, repo):
+        (Path(repo) / "local_settings.py").write_text("X = 1\n")
+        _git(repo, "add", "-f", "local_settings.py")
+        config = ReviewConfig()
+        parser = DiffParser(config)
+        parsed = parser.parse_diff(parser.get_diff("staged"))
+        t = AgentTools(config, RepoSource(repo, "index"), parser, parsed)
+        assert any(f["path"] == "local_settings.py" for f in parsed)
+        assert t.call("get_diff", {"path": "local_settings.py"}) == (
+            "Error: Access to this file is denied"
+        )
+        assert "+ 1: X = 1" not in t.call("get_diff", {"path": "app.py"})
 
     def test_get_diff_unchanged_file(self, tools):
         out = tools.call("get_diff", {"path": "util.py"})

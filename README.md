@@ -493,7 +493,7 @@ engine and then to static analysis. To run both engines on one pull request, use
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `api_key` | LLM API key. If empty, the review is skipped | No | - |
-| `base_url` | API endpoint URL | No | config |
+| `base_url` | API endpoint URL. The action ignores `llm.base_url` in the config file, because a pull request can change that file | Yes | - |
 | `model` | Model name | No | config |
 | `engine` | `classic`, `agent` or `hybrid` | No | `classic` |
 | `thinking` | Agent: `default`, `on` or `off` (the thinking mode of the model) | No | config (`agent.thinking`) |

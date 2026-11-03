@@ -19,7 +19,7 @@ inputs:
     description: 'API key for the LLM service. If it is empty, the action skips the review.'
     required: false
   base_url:
-    description: 'LLM API base URL (optional, uses the config default if not set)'
+    description: 'LLM API base URL. Required in practice: the action ignores llm.base_url in the config file, because a pull request can change that file'
     required: false
   model:
     description: 'LLM model name (optional, uses the config default if not set)'

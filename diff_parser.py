@@ -362,6 +362,7 @@ class RepoSource:
         mode: str = "worktree",
         rev: str | None = None,
         deny_patterns: tuple = DENY_PATTERNS,
+        git_timeout: float = 60,
     ):
         if mode not in ("worktree", "index", "rev"):
             raise ValueError(f"Unsupported source mode: {mode}")
@@ -372,6 +373,7 @@ class RepoSource:
         self.mode = mode
         self.rev = rev
         self.deny_patterns = deny_patterns
+        self.git_timeout = git_timeout
         top = self._git(["rev-parse", "--show-toplevel"], root or ".").strip()
         self.root = os.path.realpath(top)
 
@@ -408,17 +410,28 @@ class RepoSource:
             raise RuntimeError("Git command not found")
 
     def _run(self, args: list[str], ok_codes: tuple = (0,)) -> str:
-        result = subprocess.run(
-            ["git"] + args,
-            capture_output=True,
-            text=True,
-            errors="replace",
-            check=False,
-            cwd=self.root,
-        )
+        try:
+            result = subprocess.run(
+                ["git"] + args,
+                capture_output=True,
+                text=True,
+                errors="replace",
+                check=False,
+                cwd=self.root,
+                timeout=self.git_timeout,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"Git command timed out after {self.git_timeout:g} seconds. "
+                "Make the request narrower."
+            ) from None
         if result.returncode not in ok_codes:
             raise RuntimeError(f"Git command failed: {result.stderr.strip()}")
         return result.stdout
+
+    def is_denied(self, path: str) -> bool:
+        """Return True if the path is on the deny list."""
+        return self._is_denied(path.replace("\\", "/"))
 
     def _is_denied(self, rel_path: str) -> bool:
         parts = rel_path.split("/")

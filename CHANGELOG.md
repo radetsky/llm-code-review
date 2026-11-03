@@ -4,6 +4,12 @@ The release 0.1.0 waits for the decision about the default engine.
 
 ## [Unreleased]
 
+### Fixed
+- The action ignores `llm.base_url` of the config file in GitHub Actions. A pull request can change that file and send the API key to another server. Set the input `base_url`.
+- `get_diff` refuses the files of the deny list. Git commands of the agent tools stop after 60 seconds.
+- Secrets in `agent_stats.hybrid.fallback_reason` are hidden.
+- The hybrid engine keeps the notices of the classic engine (failed chunks, truncated review, backup model) and the coverage numbers. It reports the candidates over the limit as not verified.
+
 ### Added
 - Engine `hybrid` (`hybrid_core.py`): the classic engine lists candidate problems, and the agent checks
   each one with the tools. Config section `hybrid` (`max_candidates`, `base_steps`, `steps_per_candidate`,

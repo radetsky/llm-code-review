@@ -258,6 +258,8 @@ class AgentTools:
 
     def _get_diff(self, args: dict) -> str:
         path = self._str_arg(args, "path")
+        if self.source.is_denied(path):
+            raise ToolError("Access to this file is denied")
         for f in self.parsed_files:
             if f["path"] == path:
                 return self.parser.format_for_llm([f])

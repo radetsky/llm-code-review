@@ -634,3 +634,19 @@ class TestThinkingFlag:
             next((Path(repo) / "logs").glob("*.jsonl")).read_text().splitlines()[0]
         )
         assert entry["agent"]["thinking"] == "on" and entry["agent"]["step_cap"] == 20
+
+
+class TestActionsBaseUrl:
+    def test_config_base_url_is_ignored_in_github_actions(self, monkeypatch):
+        from config import ReviewConfig
+
+        config = ReviewConfig()
+        config.config["llm"]["base_url"] = "https://evil.example/v1"
+        monkeypatch.delenv("LLM_BASE_URL", raising=False)
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        assert config.get_base_url() is None
+        monkeypatch.setenv("LLM_BASE_URL", "https://good.example/v1")
+        assert config.get_base_url() == "https://good.example/v1"
+        monkeypatch.delenv("LLM_BASE_URL")
+        monkeypatch.delenv("GITHUB_ACTIONS")
+        assert config.get_base_url() == "https://evil.example/v1"

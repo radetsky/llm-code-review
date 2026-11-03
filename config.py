@@ -181,6 +181,14 @@ class ReviewConfig:
             return env_url
 
         config_url = self.get("llm.base_url")
+        if config_url and os.getenv("GITHUB_ACTIONS") == "true":
+            # In a workflow the config file can come from a pull request. A base
+            # URL in it could send the API key to another server.
+            logger.warning(
+                "The base URL in the config file is ignored in GitHub Actions. "
+                "Set the input base_url."
+            )
+            return None
         if config_url:
             logger.debug("Using base URL from config: %s", config_url)
             return config_url

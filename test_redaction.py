@@ -183,3 +183,12 @@ class TestRedactResult:
         result = ReviewResult("success", ["a.py:1: bad"], [], [])
         assert redact_result(result) == 0 and result.redacted_count == 0
         assert result.critical_issues == ["a.py:1: bad"]
+
+
+def test_nested_hybrid_fallback_reason_is_redacted():
+    result = make_result(
+        agent_stats={"hybrid": {"fallback_reason": f"failed with {GITHUB_TOKEN}"}}
+    )
+    redact_result(result)
+    reason = result.agent_stats["hybrid"]["fallback_reason"]
+    assert GITHUB_TOKEN not in reason and PLACEHOLDER in reason

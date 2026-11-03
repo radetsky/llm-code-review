@@ -43,7 +43,7 @@ class TestCandidates:
         )
         items, skipped = collect_candidates(r, 2)
         assert items == [("critical", "a.py:1: Bad"), ("warning", "a.py:2: Risky")]
-        assert skipped == 1
+        assert skipped == [("warning", "b.py:3: Odd")]
 
     def test_render(self):
         assert render_candidates([("critical", "x"), ("warning", "y")]) == (
@@ -130,3 +130,39 @@ class TestHybrid:
         h, _ = make(tools, classic, [submit([])])
         result = h.review("diff", tools)
         assert result.code_suggestions == classic.code_suggestions
+
+
+class TestNoticesAndLimit:
+    def test_notices_are_not_candidates(self):
+        r = classic_result(
+            warnings=[
+                "Chunk 2/3 review failed: x",
+                "Truncated review: 1 file(s) skipped",
+                "a.py:2: Risky",
+            ]
+        )
+        items, skipped = collect_candidates(r, 5)
+        assert items == [("warning", "a.py:2: Risky")] and skipped == []
+
+    def test_notices_and_coverage_reach_the_result(self, tools):
+        classic = classic_result(
+            warnings=["Chunk 2/3 review failed: x", "app.py:2: Problem"]
+        )
+        classic.chunks_reviewed, classic.total_chunks = 2, 3
+        classic.fallback_used = True
+        h, client = make(tools, classic, [submit([])])
+        result = h.review("diff", tools)
+        assert result.warnings == ["Chunk 2/3 review failed: x"]
+        assert (result.chunks_reviewed, result.total_chunks) == (2, 3)
+        assert result.fallback_used is True
+        assert "Chunk 2/3" not in client.requests[0]["messages"][1]["content"]
+
+    def test_skipped_candidates_are_reported(self, tools):
+        tools.config.config["hybrid"]["max_candidates"] = 1
+        classic = classic_result(warnings=["app.py:2: A", "app.py:6: B"])
+        h, _ = make(tools, classic, [submit([])])
+        result = h.review("diff", tools)
+        assert result.suggestions == [
+            "Not verified (candidate limit): [warning] app.py:6: B"
+        ]
+        assert result.agent_stats["hybrid"]["skipped"] == 1

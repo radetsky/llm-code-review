@@ -373,3 +373,22 @@ class TestMoreDeniedFiles:
         src = RepoSource(secret_repo, "worktree")
         for name in ("secrets.py", "app/utils.py", ".dockerignore"):
             assert "token" in src.read(name)
+
+
+class TestGitTimeout:
+    def test_slow_git_command_times_out(self, repo, monkeypatch):
+        import subprocess as sp
+
+        source = RepoSource(repo, "worktree", git_timeout=7)
+
+        def slow(*args, **kwargs):
+            assert kwargs["timeout"] == 7
+            raise sp.TimeoutExpired(args[0], kwargs["timeout"])
+
+        monkeypatch.setattr("diff_parser.subprocess.run", slow)
+        with pytest.raises(RuntimeError, match="timed out after 7 seconds"):
+            source.grep("x")
+
+    def test_is_denied_is_public(self, repo):
+        source = RepoSource(repo, "worktree")
+        assert source.is_denied("a/.env") and not source.is_denied("src/app.py")
