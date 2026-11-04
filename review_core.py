@@ -193,9 +193,7 @@ class LLMReviewer:
             f"- {r}" for r in custom_suggestions if isinstance(r, str)
         )
 
-        additional = prompt_config.get("additional_instructions") or ""
-        if not isinstance(additional, str):
-            additional = ""
+        additional = self.config.get_additional_instructions_text()
 
         return (
             "\n".join(critical_lines),

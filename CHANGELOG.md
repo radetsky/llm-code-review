@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+- `prompt.additional_instructions_file` config key — path to a Markdown file with
+  project-specific review rules and context. The file is appended to the system prompt
+  (after built-in rules, before the output-format block), so the parser and GitHub Action
+  inline comments work unchanged. Path is resolved relative to `review_config.json`, so
+  committing both files to the repository root is sufficient for GitHub CI with no
+  `action.yml` changes.
+
+### Fixed
+- `format_for_llm` now renders hunk lines in their physical diff order (interleaved context,
+  removed, and added lines) instead of grouping all removed lines before all added lines.
+  Previously, an unchanged line between two additions was printed after both additions,
+  causing the LLM to see non-sequential line numbers and produce false-positive warnings
+  (e.g. "orphaned doc-comment" on a correctly placed enum variant). Context trimming
+  (`output.max_context_lines`) now trims only the leading and trailing context runs and
+  preserves all interior context lines intact.
+- `{context_lines}` placeholder in `DEFAULT_SYSTEM_PROMPT` was double-braced (`{{context_lines}}`),
+  causing the literal text `{context_lines}` to reach the LLM instead of the configured value.
+- `TestCodeSuggestionParsing` tests failed when `enable_code_suggestions` was `false` (the
+  default). The fixture now sets `LLM_CODE_SUGGESTIONS=true` via `monkeypatch` so the tests
+  exercise the code path they were written for.
+
 ## [0.1.6] - 2026-05-06
 
 ### Fixed (docs)

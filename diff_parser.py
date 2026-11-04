@@ -125,6 +125,7 @@ class DiffParser:
                         "old_count": old_count,
                         "new_start": new_start,
                         "new_count": new_count,
+                        "lines": [],
                         "context_before": [],
                         "removed_lines": [],
                         "added_lines": [],
@@ -134,8 +135,9 @@ class DiffParser:
             # Content lines
             elif current_hunk:
                 if line.startswith(" "):
-                    # Context line — exists in both old and new file
+                    # Context line -- exists in both old and new file
                     entry = {"line": new_line_num, "content": line[1:]}
+                    current_hunk["lines"].append({"kind": "context", **entry})
                     if (
                         not current_hunk["added_lines"]
                         and not current_hunk["removed_lines"]
@@ -146,16 +148,16 @@ class DiffParser:
                     old_line_num += 1
                     new_line_num += 1
                 elif line.startswith("-"):
-                    # Removed line — only in old file
-                    current_hunk["removed_lines"].append(
-                        {"line": old_line_num, "content": line[1:]}
-                    )
+                    # Removed line -- only in old file
+                    entry = {"line": old_line_num, "content": line[1:]}
+                    current_hunk["lines"].append({"kind": "removed", **entry})
+                    current_hunk["removed_lines"].append(entry)
                     old_line_num += 1
                 elif line.startswith("+"):
-                    # Added line — only in new file
-                    current_hunk["added_lines"].append(
-                        {"line": new_line_num, "content": line[1:]}
-                    )
+                    # Added line -- only in new file
+                    entry = {"line": new_line_num, "content": line[1:]}
+                    current_hunk["lines"].append({"kind": "added", **entry})
+                    current_hunk["added_lines"].append(entry)
                     new_line_num += 1
 
             i += 1
@@ -185,12 +187,44 @@ class DiffParser:
 
         return filtered_files
 
+    def _trim_context(
+        self, lines: List[Dict[str, Any]], max_context: int
+    ) -> List[Dict[str, Any]]:
+        """Trim leading and trailing context-only runs to at most max_context lines each.
+
+        Interior context lines (between change lines) are preserved intact so
+        that the LLM receives lines in their true physical order.
+        """
+        leading = 0
+        for item in lines:
+            if item["kind"] == "context":
+                leading += 1
+            else:
+                break
+
+        trailing = 0
+        for item in reversed(lines):
+            if item["kind"] == "context":
+                trailing += 1
+            else:
+                break
+
+        start = max(0, leading - max_context)
+        end = len(lines) - max(0, trailing - max_context)
+        return lines[start:end]
+
     def format_for_llm(self, parsed_files: List[Dict[str, Any]]) -> str:
-        """Format parsed diff for LLM consumption."""
+        """Format parsed diff for LLM consumption.
+
+        Lines are rendered in their physical diff order (context, removed, and
+        added lines interleaved as they appear in the hunk) so that the LLM
+        sees sequentially-numbered output matching the real file structure.
+        """
         if not parsed_files:
             return "No code changes to review."
 
         formatted_sections = []
+        prefix_map = {"context": "  ", "removed": "- ", "added": "+ "}
 
         for file_data in parsed_files:
             file_path = file_data["path"]
@@ -207,31 +241,13 @@ class DiffParser:
 
                     max_context = self.config.get("output.max_context_lines", 10)
 
-                    # Context before with line numbers
-                    for entry in hunk["context_before"][-max_context:]:
+                    for item in self._trim_context(hunk["lines"], max_context):
+                        prefix = prefix_map[item["kind"]]
                         formatted_sections.append(
-                            f"  {entry['line']}: {entry['content']}"
+                            f"{prefix}{item['line']}: {item['content']}"
                         )
 
-                    # Removed lines with old-file line numbers
-                    for entry in hunk["removed_lines"]:
-                        formatted_sections.append(
-                            f"- {entry['line']}: {entry['content']}"
-                        )
-
-                    # Added lines with new-file line numbers
-                    for entry in hunk["added_lines"]:
-                        formatted_sections.append(
-                            f"+ {entry['line']}: {entry['content']}"
-                        )
-
-                    # Context after with line numbers
-                    for entry in hunk["context_after"][:max_context]:
-                        formatted_sections.append(
-                            f"  {entry['line']}: {entry['content']}"
-                        )
-
-                    formatted_sections.append("")  # Empty line for readability
+                    formatted_sections.append("")
 
         return "\n".join(formatted_sections)
 

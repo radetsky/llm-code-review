@@ -1,4 +1,4 @@
-"""Tests for DiffParser.parse_diff to catch cross-file hunk attribution bugs."""
+"""Tests for DiffParser.parse_diff and format_for_llm."""
 
 from unittest.mock import MagicMock
 
@@ -156,3 +156,98 @@ class TestDeletedFileBetween:
         hunks = _path_to_hunks(files, "new.py")
         contents = _added_contents(hunks)
         assert contents == ["x = 1", "y = 2"]
+
+
+# Diff that mirrors the real-world false-positive trigger: two additions
+# separated by an unchanged line inside the same hunk.
+INTERLEAVED_DIFF = """\
+diff --git a/status.rs b/status.rs
+--- a/status.rs
++++ b/status.rs
+@@ -13,7 +13,9 @@
+     DownloadFailed {},
+-    /// Checksum or minisign signature does not match the manifest.
++    /// Artifact checksum or the artifact's own minisign signature is invalid.
+     VerificationFailed {},
++    /// The detached manifest signature (latest.json.sig) is missing or invalid.
++    ManifestVerificationFailed {},
+     /// Installer could not be launched.
+"""
+
+
+class TestFormatForLLMOrdering:
+    """format_for_llm must render lines in their physical diff order."""
+
+    def test_interleaved_lines_are_in_physical_order(self, parser: DiffParser) -> None:
+        """Interior context must appear between the two added blocks, not after them.
+
+        The rendered output for the interleaved diff should follow physical line
+        order so that the LLM does not see two doc-comments back-to-back with
+        no enum variant between them.
+        """
+        parser.config.get.return_value = 10
+        files = parser.parse_diff(INTERLEAVED_DIFF)
+        rendered = parser.format_for_llm(files)
+        lines = [ln for ln in rendered.splitlines() if ln.strip()]
+
+        # Locate the rendered positions of the three key lines.
+        removed_idx = next(
+            i for i, ln in enumerate(lines) if ln.startswith("- ") and "Checksum" in ln
+        )
+        context_idx = next(
+            i for i, ln in enumerate(lines) if "VerificationFailed" in ln
+        )
+        added_manifest_idx = next(
+            i
+            for i, ln in enumerate(lines)
+            if ln.startswith("+ ") and "ManifestVerificationFailed" in ln
+        )
+
+        # Physical order: removed doc, context variant, added doc, added variant
+        assert removed_idx < context_idx < added_manifest_idx, (
+            f"Line order wrong: removed={removed_idx}, "
+            f"context={context_idx}, added_manifest={added_manifest_idx}\n"
+            f"Rendered:\n{rendered}"
+        )
+
+    def test_new_file_line_numbers_are_monotonic(self, parser: DiffParser) -> None:
+        """New-file (context and added) line numbers must increase monotonically."""
+        parser.config.get.return_value = 10
+        files = parser.parse_diff(INTERLEAVED_DIFF)
+        rendered = parser.format_for_llm(files)
+
+        new_file_nums = []
+        for line in rendered.splitlines():
+            if line.startswith("  ") or line.startswith("+ "):
+                try:
+                    num = int(line.split(":")[0].strip())
+                    new_file_nums.append(num)
+                except ValueError:
+                    pass
+
+        assert new_file_nums == sorted(new_file_nums), (
+            f"New-file line numbers are not monotonic: {new_file_nums}"
+        )
+
+    def test_trim_context_leading_trailing(self, parser: DiffParser) -> None:
+        """_trim_context keeps at most max_context leading and trailing context lines."""
+        lines = (
+            [{"kind": "context", "line": i, "content": f"ctx{i}"} for i in range(1, 6)]
+            + [
+                {"kind": "added", "line": 6, "content": "new"},
+            ]
+            + [
+                {"kind": "context", "line": i, "content": f"ctx{i}"}
+                for i in range(7, 12)
+            ]
+        )
+        trimmed = parser._trim_context(lines, max_context=2)
+        leading_ctx = [
+            x for x in trimmed if x["content"].startswith("ctx") and x["line"] < 6
+        ]
+        trailing_ctx = [
+            x for x in trimmed if x["content"].startswith("ctx") and x["line"] >= 7
+        ]
+        assert len(leading_ctx) == 2
+        assert len(trailing_ctx) == 2
+        assert any(x["kind"] == "added" for x in trimmed)

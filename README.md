@@ -203,7 +203,38 @@ Add project-specific rules on top of the selected built-in categories via the `p
 - `custom_warnings` - Project-specific rules that warn but allow commits (appended after built-in warnings)
 - `custom_suggestions` - Additional improvement suggestions
 - `additional_instructions` - Extra context or constraints for the LLM (language, confidence threshold, etc.)
+- `additional_instructions_file` - Path to a Markdown file with project-specific rules (see below)
 - `custom_prompt` - Completely replace the default prompt with placeholder support (see below)
+
+### Project-Specific Rules File
+
+For long checklists or team-maintained review specs, store them in a separate file instead of
+embedding them as an escaped JSON string. The file is **appended to the system prompt** — the
+built-in output format (`CRITICAL: file:line: description`) is always preserved and the parser
+works unchanged.
+
+```json
+{
+  "prompt": {
+    "additional_instructions_file": "llm_review_prompt.md"
+  }
+}
+```
+
+The path is resolved **relative to `review_config.json`**, so it works identically locally and in
+GitHub CI — just commit both files to your repository root.
+
+**What to put in the file:** project context (stack, architecture, IPC contract), domain-specific
+rules, and checklists. The file may use any Markdown formatting. Do **not** include an output
+format section — the built-in format is authoritative and any conflicting format instructions in
+the file are automatically neutralized by a lead-in injected before the file content.
+
+**Combining with inline instructions:** if both `additional_instructions_file` and
+`additional_instructions` are set, the file content comes first and the inline text follows.
+
+**GitHub CI:** no changes to `action.yml` are needed. The action runs with the working directory
+set to the consumer repository root, so `review_config.json` and the rules file are picked up
+automatically.
 
 ### Custom Prompt with Placeholders
 

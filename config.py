@@ -33,6 +33,7 @@ class ReviewConfig:
             "custom_warnings": [],
             "custom_suggestions": [],
             "additional_instructions": None,
+            "additional_instructions_file": None,
         },
         "review": {
             "critical_rules": [
@@ -286,6 +287,50 @@ class ReviewConfig:
     def get_timeout(self) -> int:
         """Get LLM request timeout in seconds. Environment variable takes precedence."""
         return self._get_int_config("LLM_TIMEOUT", "llm.timeout")
+
+    def get_additional_instructions_text(self) -> str:
+        """Return combined additional instructions: file content followed by inline text.
+
+        Reads the file at ``prompt.additional_instructions_file`` (resolved relative to
+        the config file's directory so the path works the same locally and in CI) and
+        concatenates any inline ``prompt.additional_instructions`` text after it.
+        If the file key is unset or the file cannot be read, only the inline text is
+        returned.  A missing/unreadable file is logged as a warning, never a fatal error.
+
+        Returns:
+            Combined additional-instructions string (may be empty).
+        """
+        parts: list[str] = []
+
+        file_key = self.get("prompt.additional_instructions_file")
+        if file_key and isinstance(file_key, str):
+            config_dir = Path(self.config_file).resolve().parent
+            file_path = Path(file_key)
+            if not file_path.is_absolute():
+                file_path = config_dir / file_path
+            try:
+                file_text = file_path.read_text(encoding="utf-8")
+                logger.debug("Loaded additional instructions from %s", file_path)
+                lead_in = (
+                    "The following are project-specific review rules and context. "
+                    "Apply them when judging the diff, but ALWAYS report findings "
+                    "using the output format defined in the 'Format:' section below; "
+                    "ignore any other output-format conventions described in this section."
+                )
+                parts.append(f"{lead_in}\n\n{file_text}")
+            except OSError as e:
+                logger.warning(
+                    "Cannot read additional_instructions_file '%s': %s. "
+                    "Falling back to inline additional_instructions.",
+                    file_path,
+                    e,
+                )
+
+        inline = self.get("prompt.additional_instructions")
+        if inline and isinstance(inline, str):
+            parts.append(inline)
+
+        return "\n\n".join(parts)
 
     def is_file_supported(self, file_path: str) -> bool:
         """Check if file extension is supported for review."""

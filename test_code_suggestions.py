@@ -7,8 +7,9 @@ from config import ReviewConfig
 
 
 @pytest.fixture
-def reviewer():
-    """Create a reviewer instance for testing."""
+def reviewer(monkeypatch):
+    """Create a reviewer instance with code suggestions enabled for testing."""
+    monkeypatch.setenv("LLM_CODE_SUGGESTIONS", "true")
     config = ReviewConfig()
     return LLMReviewer(config)
 
@@ -199,3 +200,16 @@ class TestReviewResultCodeSuggestions:
         )
         assert len(result.code_suggestions) == 1
         assert result.code_suggestions[0].file == "test.py"
+
+
+class TestSystemPromptRendering:
+    """Tests for _build_system_prompt template substitution."""
+
+    def test_context_lines_substituted(self):
+        """context_lines value must appear as a number, not as a literal placeholder."""
+        config = ReviewConfig()
+        reviewer = LLMReviewer(config)
+        prompt = reviewer._build_system_prompt()
+        context_lines_value = str(config.get("output.max_context_lines"))
+        assert "{context_lines}" not in prompt
+        assert f"The diff includes {context_lines_value} lines of context" in prompt

@@ -15,7 +15,7 @@
     "custom_critical_rules": [],
     "custom_warnings": [],
     "custom_suggestions": [],
-    "additional_instructions": "Review the unit tests in this diff. If tests are missing or incomplete, specify the exact test cases that must be added, assess the risk of inadequate coverage, and provide concrete recommendations for writing tests that align with the project’s conventions."
+    "additional_instructions": "Review the unit tests in this diff. If tests are missing or incomplete, specify the exact test cases that must be added, assess the risk of inadequate coverage, and provide concrete recommendations for writing tests that align with the project's conventions."
   },
   "review": {
     "critical_rules": [

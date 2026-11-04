@@ -41,7 +41,8 @@
     "custom_critical_rules": ["memory leaks", "race conditions"],
     "custom_warnings": ["deprecated API usage"],
     "custom_suggestions": ["consider async patterns"],
-    "additional_instructions": "Focus on thread safety"
+    "additional_instructions": "Focus on thread safety",
+    "additional_instructions_file": null
   },
   "output": {
     "format": "text",
