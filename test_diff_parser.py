@@ -108,3 +108,69 @@ class TestRangeReferences:
         parser = DiffParser(ReviewConfig())
         with pytest.raises(ValueError, match="Invalid git reference"):
             parser.get_diff("range", base, head)
+
+
+# Two additions with an unchanged line between them in one hunk.
+INTERLEAVED_DIFF = """\
+diff --git a/status.rs b/status.rs
+--- a/status.rs
++++ b/status.rs
+@@ -13,7 +13,9 @@
+     DownloadFailed {},
+-    /// Old doc.
++    /// New doc.
+     VerificationFailed {},
++    /// Manifest doc.
++    ManifestVerificationFailed {},
+     /// Installer could not start.
+"""
+
+
+class TestFormatForLLMOrder:
+    """format_for_llm keeps the lines in the order of the diff."""
+
+    @staticmethod
+    def render(max_context=10):
+        config = ReviewConfig()
+        config.config["output"]["max_context_lines"] = max_context
+        parser = DiffParser(config)
+        return parser.format_for_llm(
+            parser.parse_diff(INTERLEAVED_DIFF.replace("status.rs", "status.py"))
+        )
+
+    def test_interior_context_stays_between_changes(self):
+        lines = [ln for ln in self.render().splitlines() if ln.strip()]
+        removed = next(i for i, ln in enumerate(lines) if "Old doc" in ln)
+        context = next(
+            i
+            for i, ln in enumerate(lines)
+            if "VerificationFailed {}" in ln and ln.startswith("  ")
+        )
+        added = next(
+            i for i, ln in enumerate(lines) if "ManifestVerificationFailed" in ln
+        )
+        assert removed < context < added
+
+    def test_new_file_line_numbers_increase(self):
+        numbers = [
+            int(ln.split(":")[0].strip("+ "))
+            for ln in self.render().splitlines()
+            if ln.startswith(("  ", "+ "))
+        ]
+        assert numbers == sorted(numbers)
+
+    def test_edge_context_is_trimmed(self):
+        rendered = self.render(max_context=0)
+        assert "DownloadFailed" not in rendered
+        assert "Installer could not start" not in rendered
+        assert "VerificationFailed {}" in rendered  # Interior context stays.
+
+    def test_trim_context_keeps_interior_lines(self):
+        def item(kind, n):
+            return {"kind": kind, "line": n, "content": str(n)}
+
+        lines = [item("context", 1), item("context", 2), item("added", 3)]
+        lines += [item("context", 4), item("added", 5)]
+        lines += [item("context", 6), item("context", 7)]
+        trimmed = DiffParser._trim_context(lines, 1)
+        assert [x["line"] for x in trimmed] == [2, 3, 4, 5, 6]

@@ -170,6 +170,7 @@ Add project-specific rules to the `prompt` section in `review_config.json`:
 - `custom_warnings` - Additional rules that the review reports as warnings
 - `custom_suggestions` - Additional improvement suggestions
 - `additional_instructions` - Extra context for the LLM (language, framework, etc.)
+- `additional_instructions_file` - Path to a Markdown file with project rules. A relative path starts at the folder of the config file. The file text comes before `additional_instructions`.
 - `custom_prompt` - Completely replace the default prompt with placeholders support (see below)
 
 ### Custom Prompt with Placeholders

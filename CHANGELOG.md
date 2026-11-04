@@ -4,6 +4,12 @@ The release 0.1.0 waits for the decision about the default engine.
 
 ## [Unreleased]
 
+### Added
+- `prompt.additional_instructions_file`: a path to a Markdown file with project rules. A relative path starts at the folder of the config file. Both engines add the file text before `prompt.additional_instructions`. If the file cannot be read, the review uses the inline text and logs a warning.
+
+### Fixed
+- `format_for_llm` writes the lines of a hunk in the order of the diff. Before, it wrote all removed lines, then all added lines, and moved a context line between two changes after both. The model saw line numbers out of sequence. `output.max_context_lines` now trims only the first and the last run of context lines.
+
 ### Changed
 - One `ENGINES` constant in `config.py` lists the engines. The argument parser, `get_engine`, the evaluation scripts and the order in the history report use it.
 - `normalize_text` in `review_core.py` is the one rule for duplicate text. The agent and the hybrid engine use it.

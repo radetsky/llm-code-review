@@ -60,10 +60,10 @@ def collect_rules(config) -> dict[str, str]:
         if docstring_rule not in suggestions:
             suggestions.append(docstring_rule)
 
-    additional = prompt_config.get("additional_instructions") or ""
+    additional = config.get_additional_instructions_text()
     return {
         "critical": _bullets(_rule_list(prompt_config, "custom_critical_rules")),
         "warnings": _bullets(_rule_list(prompt_config, "custom_warnings")),
         "suggestions": _bullets(suggestions),
-        "additional": additional if isinstance(additional, str) else "",
+        "additional": additional,
     }

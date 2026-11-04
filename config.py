@@ -35,6 +35,7 @@ class ReviewConfig:
             "custom_warnings": [],
             "custom_suggestions": [],
             "additional_instructions": None,
+            "additional_instructions_file": None,
             "language_blocks": "auto",  # "auto", or a list: ["django", "go", "rust"]
         },
         "review": {
@@ -337,6 +338,40 @@ class ReviewConfig:
         config_value = self.get("llm.timeout", 180)
         logger.debug("Using timeout from config: %d", config_value)
         return config_value
+
+    def get_additional_instructions_text(self) -> str:
+        """Return the additional instructions: file text, then inline text.
+
+        The file is prompt.additional_instructions_file. A relative path starts
+        at the folder of the config file, so it works the same in CI. If the
+        file cannot be read, the function logs a warning and returns the inline
+        text only.
+        """
+        parts: list[str] = []
+
+        file_key = self.get("prompt.additional_instructions_file")
+        if file_key and isinstance(file_key, str):
+            file_path = Path(file_key)
+            if not file_path.is_absolute():
+                file_path = Path(self.config_file).resolve().parent / file_path
+            try:
+                file_text = file_path.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeDecodeError) as e:
+                logger.warning(
+                    "Cannot read additional_instructions_file '%s': %s. "
+                    "Using the inline additional_instructions only.",
+                    file_path,
+                    e,
+                )
+            else:
+                if file_text:
+                    parts.append(file_text)
+
+        inline = self.get("prompt.additional_instructions")
+        if inline and isinstance(inline, str):
+            parts.append(inline)
+
+        return "\n\n".join(parts)
 
     def is_file_supported(self, file_path: str) -> bool:
         """Check if file extension is supported for review."""
